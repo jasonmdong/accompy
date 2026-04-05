@@ -16,6 +16,8 @@ left-hand accompaniment will follow your tempo automatically.
 """
 
 import sys
+import os
+import importlib.util
 import time
 import threading
 import queue
@@ -26,22 +28,62 @@ from tracker import ScoreTracker
 from accompanist import Accompanist
 from synth import play_note as synth_play_note
 
+
+def load_score(name: str):
+    """Load RIGHT_HAND and LEFT_HAND from scores/<name>.py"""
+    path = os.path.join("scores", f"{name}.py")
+    if not os.path.exists(path):
+        print(f"Score not found: {path}")
+        print("Available scores:")
+        list_scores()
+        sys.exit(1)
+    spec = importlib.util.spec_from_file_location("_score", path)
+    mod  = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.RIGHT_HAND, mod.LEFT_HAND
+
+
+def list_scores():
+    files = sorted(f[:-3] for f in os.listdir("scores") if f.endswith(".py"))
+    for f in files:
+        print(f"  {f}")
+
+
+def get_score_name() -> str:
+    """Return the score name from --score flag, defaulting to 'twinkle'."""
+    for i, arg in enumerate(sys.argv[1:], 1):
+        if arg == "--score" and i < len(sys.argv):
+            return sys.argv[i + 1]
+        if arg.startswith("--score="):
+            return arg.split("=", 1)[1]
+    return "twinkle"
+
 NOTE_ON_MASK = 0x90
 NOTE_OFF_MASK = 0x80
 
-# Computer keyboard → MIDI note mapping (white keys, C major)
+# Computer keyboard → MIDI note mapping (3 octaves of white keys)
+#
+#   Low  (C3–B3):  z x c v b n m
+#   Mid  (C4–B4):  a s d f g h j
+#   High (C5–B5):  q w e r t y u   and  i = C6
+#
 KEY_TO_PITCH = {
-    'a': 60,  # C4
-    's': 62,  # D4
-    'd': 64,  # E4
-    'f': 65,  # F4
-    'g': 67,  # G4
-    'h': 69,  # A4
-    'j': 71,  # B4
-    'k': 72,  # C5
+    # C3 octave
+    'z': 48, 'x': 50, 'c': 52, 'v': 53, 'b': 55, 'n': 57, 'm': 59,
+    # C4 octave
+    'a': 60, 's': 62, 'd': 64, 'f': 65, 'g': 67, 'h': 69, 'j': 71,
+    # C5 octave
+    'q': 72, 'w': 74, 'e': 76, 'r': 77, 't': 79, 'y': 81, 'u': 83,
+    # C6
+    'i': 84,
 }
 
-NOTE_NAMES = {60: 'C', 62: 'D', 64: 'E', 65: 'F', 67: 'G', 69: 'A', 71: 'B', 72: 'C5'}
+_NOTE_NAMES_ALL = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
+
+def _pitch_name(midi: int) -> str:
+    return _NOTE_NAMES_ALL[midi % 12] + str((midi // 12) - 1)
+
+NOTE_NAMES = {v: _pitch_name(v) for v in KEY_TO_PITCH.values()}
 
 
 def list_ports(midi_obj, label: str) -> list[str]:
@@ -90,12 +132,32 @@ def _read_keys(note_queue: queue.Queue, stop_event: threading.Event):
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
-def main_keyboard():
-    tracker = ScoreTracker()
-    accompanist = Accompanist()
+def prompt_bpm() -> float:
+    while True:
+        try:
+            val = input("Starting BPM (press Enter for 100): ").strip()
+            if val == "":
+                return 100.0
+            bpm = float(val)
+            if 20 <= bpm <= 300:
+                return bpm
+        except ValueError:
+            pass
+        print("Please enter a number between 20 and 300.")
 
-    print("\nKeyboard mode — play the Twinkle Twinkle melody:")
-    print("  a=C  s=D  d=E  f=F  g=G  h=A  j=B  k=C(high)")
+
+def main_keyboard():
+    right, left = load_score(get_score_name())
+    initial_bps = prompt_bpm() / 60.0
+
+    tracker     = ScoreTracker(right, initial_bps=initial_bps)
+    accompanist = Accompanist(left, right, initial_bps=initial_bps)
+    accompanist.start()
+
+    print("\nKeyboard mode — play the melody (left hand will follow your tempo):")
+    print("  Low  (C3–B3):  z x c v b n m")
+    print("  Mid  (C4–B4):  a s d f g h j")
+    print("  High (C5–B5):  q w e r t y u   i=C6")
     print("Press Ctrl+C to stop.\n")
 
     note_queue: queue.Queue = queue.Queue()
@@ -113,11 +175,10 @@ def main_keyboard():
                 break
 
             beat = tracker.on_note(pitch)
-            # Play right hand + left hand simultaneously
             synth_play_note(pitch)
             if beat is not None:
-                accompanist.play_for_beat(beat)
                 bps = tracker.beats_per_second()
+                accompanist.on_rh_note(beat, bps)
                 sys.stdout.write(f"  {NOTE_NAMES.get(pitch, pitch):<3}  beat={beat:.1f}  tempo={bps*60:.0f} BPM\r\n")
             else:
                 sys.stdout.write(f"  {NOTE_NAMES.get(pitch, pitch):<3}  (no match)\r\n")
@@ -126,6 +187,7 @@ def main_keyboard():
         pass
     finally:
         stop_event.set()
+        accompanist.stop()
         print("\r\nStopping.")
 
 
@@ -145,10 +207,14 @@ def main():
     # Ignore SysEx, timing, and active sensing messages.
     midi_in.ignore_types(sysex=True, timing=True, active_sense=True)
 
-    tracker     = ScoreTracker()
-    accompanist = Accompanist()
+    right, left = load_score(get_score_name())
+    initial_bps = prompt_bpm() / 60.0
 
-    print("\nReady. Play the right-hand melody — left hand will follow.")
+    tracker     = ScoreTracker(right, initial_bps=initial_bps)
+    accompanist = Accompanist(left, right, initial_bps=initial_bps)
+    accompanist.start()
+
+    print("\nReady. Play the right-hand melody — left hand will follow your tempo.")
     print("Press Ctrl+C to stop.\n")
 
     try:
@@ -173,7 +239,7 @@ def main():
             if beat is not None:
                 bps = tracker.beats_per_second()
                 print(f"  note={pitch:3d}  beat={beat:.1f}  tempo={bps*60:.0f} BPM")
-                accompanist.play_for_beat(beat)
+                accompanist.on_rh_note(beat, bps)
             else:
                 print(f"  note={pitch:3d}  (no match)")
 
@@ -187,7 +253,10 @@ def main():
 
 
 if __name__ == "__main__":
-    if "--keyboard" in sys.argv or "-k" in sys.argv:
+    if "--list" in sys.argv:
+        print("Available scores:")
+        list_scores()
+    elif "--keyboard" in sys.argv or "-k" in sys.argv:
         main_keyboard()
     else:
         main()

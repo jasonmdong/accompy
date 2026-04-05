@@ -11,7 +11,6 @@ Strategy (Option A — event-driven):
 
 import time
 from collections import deque
-from score import RIGHT_HAND
 
 # How many recent inter-note intervals to average for tempo estimation.
 TEMPO_WINDOW = 4
@@ -20,11 +19,11 @@ TEMPO_WINDOW = 4
 LOOKAHEAD = 3
 
 class ScoreTracker:
-    def __init__(self):
-        self.score = RIGHT_HAND          # [(pitch, beat), ...]
+    def __init__(self, right_hand: list, initial_bps: float = 2.0):
+        self.score = right_hand          # [(pitch, beat), ...]
         self.position = 0                # index into self.score for next expected note
         self.timestamps = deque()        # (real_time, beat) for recent matches
-        self._default_bps = 120 / 60.0  # 120 BPM in beats-per-second as fallback
+        self._default_bps = initial_bps
 
     def on_note(self, pitch: int) -> float | None:
         """
