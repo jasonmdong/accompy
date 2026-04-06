@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>accompy</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>acc<span>ompy</span></h1>
+  <small id="midi-status" style="color:#555;font-size:.8rem;margin-left:auto"></small>
+</header>
+
+<!-- ── Score list ── -->
+<div id="list-screen" class="screen active">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.25rem">
+    <h2 style="font-size:1rem;color:#aaa">Choose a piece</h2>
+    <button class="btn btn-primary" onclick="openAddModal()">+ Add piece</button>
+  </div>
+  <p style="font-size:.85rem;color:#555;margin-bottom:.5rem">Play the right-hand melody — the left hand follows your tempo.</p>
+  <div id="score-grid" class="score-grid"></div>
+</div>
+
+<!-- ── Add piece modal ── -->
+<div id="add-modal" class="modal-backdrop" style="display:none" onclick="closeAddModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Add a piece</h3>
+      <button class="modal-close" onclick="closeAddModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="search-row">
+        <input id="corpus-search" type="text" placeholder="Search by composer or piece…" oninput="onSearchInput()" autocomplete="off">
+        <span id="search-spinner" style="display:none">⏳</span>
+      </div>
+      <div id="search-results" class="search-results">
+        <p class="search-hint">Type to search the built-in music library (535 pieces).</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Play screen ── -->
+<div id="play-screen" class="screen">
+
+  <div class="top-row">
+    <button class="btn btn-ghost" onclick="showScreen('list-screen')">← Back</button>
+    <h2 id="play-title"></h2>
+  </div>
+
+  <div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width:0%"></div></div>
+
+  <div class="play-top">
+
+    <!-- Controls -->
+    <div class="controls">
+      <label>Starting tempo</label>
+      <div class="bpm-row">
+        <input id="bpm-input" type="number" value="100" min="20" max="300">
+        <span style="color:#555;font-size:.85rem">BPM</span>
+      </div>
+      <div style="display:flex;gap:.6rem;margin-top:1rem">
+        <button id="start-btn" class="btn btn-primary" onclick="startPlaying()">▶ Start</button>
+        <button id="stop-btn"  class="btn btn-danger"  onclick="stopPlaying()" disabled>■ Stop</button>
+      </div>
+      <p style="margin-top:1rem;font-size:.78rem;color:#555;line-height:1.5">
+        Use your computer keyboard or a USB MIDI keyboard.<br>
+        The left hand will play between your notes and wait for you when needed.
+      </p>
+    </div>
+
+    <!-- Status -->
+    <div class="status-panel">
+      <div class="status-row">
+        <span>Current beat</span>
+        <span class="status-val" id="beat-val">—</span>
+      </div>
+      <div class="status-row">
+        <span>Detected tempo</span>
+        <span class="status-val" id="tempo-val">—</span>
+      </div>
+      <div class="status-row">
+        <span>Next note</span>
+      </div>
+      <div id="next-note-display">—</div>
+    </div>
+
+  </div>
+
+  <!-- Keyboard layout -->
+  <div class="keyboard-section">
+    <h4>Keyboard layout — press the highlighted key</h4>
+    <div class="kb-layout">
+      <div id="kb-row-0" class="kb-row"></div>
+      <div id="kb-row-1" class="kb-row"></div>
+      <div id="kb-row-2" class="kb-row"></div>
+    </div>
+  </div>
+
+  <!-- Sheet music -->
+  <div class="sheet-section">
+    <h4>Sheet music</h4>
+    <iframe id="sheet-frame" style="display:none"></iframe>
+    <div id="sheet-placeholder" class="sheet-placeholder">
+      No sheet music available for this score.<br>
+      Re-run <code>convert_score.py</code> with verovio installed to generate it.
+    </div>
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

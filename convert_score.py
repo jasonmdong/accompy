@@ -104,8 +104,11 @@ def main():
     print(f"Parsing {args.input} ...")
     if args.input.startswith("corpus:"):
         from music21 import corpus as m21corpus
-        score = m21corpus.parse(args.input[len("corpus:"):])
+        corpus_path = args.input[len("corpus:"):]
+        mxl_path = str(m21corpus.getWork(corpus_path))
+        score = m21corpus.parse(corpus_path)
     else:
+        mxl_path = args.input
         score = converter.parse(args.input)
 
     parts = score.parts
@@ -138,7 +141,72 @@ def main():
         out_path = os.path.join("scores", f"{name}.py")
 
     write_score_py(right, left, out_path, title)
-    print(f"\nPlay it with:  python main.py --score {os.path.splitext(os.path.basename(out_path))[0]}")
+
+    score_name = os.path.splitext(os.path.basename(out_path))[0]
+    print(f"\nPlay it with:  python main.py --score {score_name}")
+
+    # Render sheet music to HTML (open in browser → print to PDF)
+    render_html(mxl_path, os.path.join("scores", f"{score_name}.html"), title)
+
+
+def render_html(mxl_path: str, out_path: str, title: str):
+    """Render MusicXML to a printable HTML file using Verovio."""
+    try:
+        import verovio
+    except ImportError:
+        print("(Skipping sheet music render — run: pip install verovio)")
+        return
+
+    tk = verovio.toolkit()
+    tk.setOptions({
+        "pageWidth":  2100,
+        "pageHeight": 2970,   # A4 in tenths (~210mm × 297mm at 10 tenths/mm)
+        "spacingSystem": 12,
+        "adjustPageHeight": 0,
+        "footer": "none",
+    })
+    tk.loadFile(mxl_path)
+
+    page_count = tk.getPageCount()
+    svgs = [tk.renderToSVG(i + 1) for i in range(page_count)]
+
+    page_divs = "\n".join(
+        f'<div class="page">{svg}</div>' for svg in svgs
+    )
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{title}</title>
+  <style>
+    body {{ margin: 0; background: #eee; font-family: sans-serif; }}
+    h1   {{ text-align: center; padding: 1rem; font-size: 1.1rem; color: #333; }}
+    .page {{
+      background: white;
+      width: 210mm;
+      margin: 1rem auto;
+      box-shadow: 0 2px 6px rgba(0,0,0,.3);
+      page-break-after: always;
+    }}
+    .page svg {{ width: 100%; height: auto; display: block; }}
+    @media print {{
+      body {{ background: white; }}
+      h1   {{ display: none; }}
+      .page {{ margin: 0; box-shadow: none; width: 100%; }}
+    }}
+  </style>
+</head>
+<body>
+  <h1>{title} — open in browser and use File → Print to save as PDF</h1>
+  {page_divs}
+</body>
+</html>"""
+
+    with open(out_path, "w") as f:
+        f.write(html)
+
+    print(f"Sheet music : {out_path}  (open in browser → File → Print → Save as PDF)")
 
 
 def show_melody(name: str = None):
