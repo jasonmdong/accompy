@@ -20,6 +20,12 @@ const HAS_SHARP = new Set(['z','x','v','b','n','a','s','f','g','h','q','w','r','
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 function pitchName(midi) { return NOTE_NAMES[midi % 12] + (Math.floor(midi/12)-1); }
 
+const INSTRUMENTS = ['piano','violin','viola','cello','strings','flute','clarinet','oboe'];
+const INSTRUMENT_EMOJI = {
+  piano:'🎹', violin:'🎻', viola:'🎻', cello:'🎻', strings:'🎻',
+  flute:'🪈', clarinet:'🎷', oboe:'🎷',
+};
+
 // ── Web Audio Synth ─────────────────────────────────────────────────────────
 let _audioCtx = null;
 function audioCtx() {
@@ -27,28 +33,69 @@ function audioCtx() {
   return _audioCtx;
 }
 
-function playNote(midi, velocity = 0.6, duration = 1.2) {
-  const ctx  = audioCtx();
-  const freq = 440 * Math.pow(2, (midi - 69) / 12);
-  const gain = ctx.createGain();
-  gain.connect(ctx.destination);
-  const now = ctx.currentTime;
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(velocity * 0.35, now + 0.008);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+// instrument presets: { harmonics: [[mult, amp]], attack, decay, sustain, release, type }
+const INSTRUMENT_PRESETS = {
+  piano:    { harmonics:[[1,.7],[2,.2],[3,.1]], attack:.008, decay:3.5,  type:'sine'    },
+  violin:   { harmonics:[[1,.5],[2,.25],[3,.15],[4,.07],[5,.03]], attack:.06, decay:.4, type:'sawtooth', vibrato:true },
+  viola:    { harmonics:[[1,.55],[2,.25],[3,.13],[4,.05],[5,.02]], attack:.07, decay:.35, type:'sawtooth', vibrato:true },
+  cello:    { harmonics:[[1,.6],[2,.22],[3,.12],[4,.04],[5,.02]], attack:.08, decay:.3,  type:'sawtooth', vibrato:true },
+  strings:  { harmonics:[[1,.5],[2,.2],[3,.15],[4,.1],[5,.05]],  attack:.09, decay:.25, type:'sawtooth', vibrato:true },
+  flute:    { harmonics:[[1,.85],[2,.12],[3,.03]], attack:.04, decay:.4,  type:'sine',  noise:.04  },
+  clarinet: { harmonics:[[1,.7],[3,.25],[5,.08],[7,.03]], attack:.025, decay:.5, type:'sine' },
+  oboe:     { harmonics:[[1,.5],[2,.3],[3,.15],[4,.05]], attack:.02,  decay:.6,  type:'sine' },
+};
 
-  [[1,0.7],[2,0.2],[3,0.1]].forEach(([mult, amp]) => {
+function playNote(midi, velocity = 0.6, instrument = 'piano') {
+  const ctx    = audioCtx();
+  const freq   = 440 * Math.pow(2, (midi - 69) / 12);
+  const preset = INSTRUMENT_PRESETS[instrument] || INSTRUMENT_PRESETS.piano;
+  const now    = ctx.currentTime;
+  const dur    = instrument === 'piano' ? 1.2 : 1.5;
+
+  const masterGain = ctx.createGain();
+  masterGain.connect(ctx.destination);
+  masterGain.gain.setValueAtTime(0, now);
+  masterGain.gain.linearRampToValueAtTime(velocity * 0.35, now + preset.attack);
+  masterGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+  preset.harmonics.forEach(([mult, amp]) => {
     const osc = ctx.createOscillator();
-    const g2  = ctx.createGain();
-    g2.gain.value = amp;
+    const g   = ctx.createGain();
+    g.gain.value = amp;
+    osc.type = preset.type || 'sine';
     osc.frequency.value = freq * mult;
-    osc.connect(g2); g2.connect(gain);
-    osc.start(now); osc.stop(now + duration);
+
+    // Vibrato for strings
+    if (preset.vibrato) {
+      const lfo  = ctx.createOscillator();
+      const lfoG = ctx.createGain();
+      lfo.frequency.value = 5.5;
+      lfoG.gain.setValueAtTime(0, now);
+      lfoG.gain.linearRampToValueAtTime(freq * 0.003, now + 0.15);
+      lfo.connect(lfoG);
+      lfoG.connect(osc.frequency);
+      lfo.start(now); lfo.stop(now + dur);
+    }
+    osc.connect(g); g.connect(masterGain);
+    osc.start(now); osc.stop(now + dur);
   });
+
+  // Breath noise for flute
+  if (preset.noise) {
+    const buf    = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const data   = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * preset.noise;
+    const src  = ctx.createBufferSource();
+    const noiseG = ctx.createGain();
+    noiseG.gain.value = 0.3;
+    src.buffer = buf;
+    src.connect(noiseG); noiseG.connect(masterGain);
+    src.start(now); src.stop(now + dur);
+  }
 }
 
-function playChord(pitches, velocity = 0.5) {
-  pitches.forEach(p => playNote(p, velocity / pitches.length + 0.3, 1.0));
+function playChord(pitches, velocity = 0.5, instrument = 'piano') {
+  pitches.forEach(p => playNote(p, velocity / pitches.length + 0.3, instrument));
 }
 
 // ── Tracker ──────────────────────────────────────────────────────────────────
@@ -92,8 +139,12 @@ class Tracker {
 
 // ── Accompanist ──────────────────────────────────────────────────────────────
 class Accompanist {
-  constructor(leftHand, rightHand, initialBps) {
+  constructor(leftHand, rightHand, initialBps, leftInstruments = []) {
+    // leftInstruments: array of instrument names parallel to the non-selected parts
+    // Each event gets the instrument of the source part it came from.
+    // Since getLeftHand() merges parts in order, we track that here.
     this.events    = [...leftHand].sort((a,b) => a[1]-b[1]); // [[pitches,beat],...]
+    this._instruments = leftInstruments;
     this.rhBeats   = [...new Set(rightHand.map(n=>n[1]))].sort((a,b)=>a-b);
     this._bps      = initialBps;
     this._syncBeat = 0;
@@ -139,7 +190,8 @@ class Accompanist {
       if (beat < this._nextSync - 0.01) {
         const current = this._currentBeat();
         if (current >= beat - 0.005) {
-          playChord(pitches);
+          const instr = this._instruments[0] || 'piano';
+          playChord(pitches, 0.5, instr);
           this._lhIdx++;
         }
       }
@@ -151,11 +203,13 @@ class Accompanist {
 
 // ── App State ────────────────────────────────────────────────────────────────
 let state = {
-  scores:      [],
-  current:     null,   // { name, right_hand, left_hand }
-  tracker:     null,
-  accompanist: null,
-  playing:     false,
+  scores:           [],
+  current:          null,
+  tracker:          null,
+  accompanist:      null,
+  playing:          false,
+  selectedPart:     0,
+  partInstruments:  {},  // partIndex → instrument name override
 };
 
 // ── API helpers ──────────────────────────────────────────────────────────────
@@ -217,6 +271,7 @@ async function openScore(name) {
   const data = await fetchScore(name);
   state.current = data;
   state.selectedPart = 0;
+  state.partInstruments = {};
 
   document.getElementById('play-title').textContent = formatName(name);
   document.getElementById('progress-fill').style.width = '0%';
@@ -240,13 +295,21 @@ async function openScore(name) {
   const parts = data.parts || [];
   const picker = document.getElementById('part-picker');
   const btns   = document.getElementById('part-buttons');
-  if (parts.length > 1) {
-    btns.innerHTML = parts.map((p, i) => `
-      <button class="part-btn${i === 0 ? ' selected' : ''}"
-              onclick="selectPart(${i})"
-              id="part-btn-${i}">
-        ${p.name}
-      </button>`).join('');
+  if (parts.length > 0) {
+    btns.innerHTML = parts.map((p, i) => {
+      const instr = p.instrument || 'piano';
+      return `<div class="part-row" id="part-row-${i}">
+        <button class="part-btn${i === 0 ? ' selected' : ''}"
+                onclick="selectPart(${i})" id="part-btn-${i}">
+          ${p.name}
+        </button>
+        <select class="instr-select" onchange="changeInstrument(${i}, this.value)" id="instr-${i}">
+          ${INSTRUMENTS.map(ins =>
+            `<option value="${ins}"${ins === instr ? ' selected' : ''}>${INSTRUMENT_EMOJI[ins] || '🎵'} ${ins}</option>`
+          ).join('')}
+        </select>
+      </div>`;
+    }).join('');
     picker.style.display = 'block';
   } else {
     picker.style.display = 'none';
@@ -264,6 +327,24 @@ function selectPart(idx) {
     b.classList.toggle('selected', i === idx));
   buildKeyboard(getRightHand());
   document.getElementById('next-note-display').textContent = '—';
+}
+
+function getInstrumentForPart(idx) {
+  return state.partInstruments[idx]
+    ?? state.current?.parts?.[idx]?.instrument
+    ?? 'piano';
+}
+
+async function changeInstrument(partIdx, instrument) {
+  state.partInstruments[partIdx] = instrument;
+  try {
+    await api(`/api/scores/${state.current.name}/instrument`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ part_index: partIdx, instrument }),
+    });
+    localStorage.removeItem(`accompy_score_${state.current.name}`);
+  } catch { /* non-critical — change is applied in-memory either way */ }
 }
 
 function getRightHand() {
@@ -357,8 +438,16 @@ function startPlaying() {
   const right = getRightHand();
   const left  = getLeftHand();
 
+  // Build per-part instrument map for the accompanist (all non-selected parts)
+  const parts = state.current?.parts || [];
+  const sel   = state.selectedPart ?? 0;
+  const leftInstruments = parts
+    .map((_, i) => i)
+    .filter(i => i !== sel)
+    .map(i => getInstrumentForPart(i));
+
   state.tracker     = new Tracker(right, initialBps);
-  state.accompanist = new Accompanist(left, right, initialBps);
+  state.accompanist = new Accompanist(left, right, initialBps, leftInstruments);
   state.accompanist.start();
   state.playing = true;
 
@@ -380,7 +469,7 @@ function stopPlaying() {
 // ── Note handler (called by keyboard and MIDI) ────────────────────────────────
 function handleNote(midi) {
   if (!state.playing || !state.tracker) return;
-  playNote(midi);
+  playNote(midi, 0.6, getInstrumentForPart(state.selectedPart ?? 0));
   const k = buildPitchToKey()[midi];
   highlightKey(k, true);
   setTimeout(() => highlightKey(k, false), 120);

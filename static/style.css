@@ -127,7 +127,8 @@ header h1 span { color: #7c6af7; }
   background: #1a1a26; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;
 }
 .part-picker h4 { font-size: .85rem; color: #aaa; margin-bottom: .75rem; }
-.part-buttons { display: flex; gap: .5rem; flex-wrap: wrap; }
+.part-buttons { display: flex; flex-direction: column; gap: .5rem; }
+.part-row { display: flex; align-items: center; gap: .5rem; }
 .part-btn {
   padding: .45rem 1rem; border-radius: 6px; border: 1px solid #3a3a50;
   background: #0f0f13; color: #aaa; font-size: .85rem; cursor: pointer;
@@ -135,6 +136,12 @@ header h1 span { color: #7c6af7; }
 }
 .part-btn:hover { border-color: #7c6af7; color: #e8e8f0; }
 .part-btn.selected { background: #7c6af7; border-color: #7c6af7; color: #fff; font-weight: 600; }
+
+.instr-select {
+  padding: .35rem .6rem; border-radius: 6px; border: 1px solid #3a3a50;
+  background: #0f0f13; color: #aaa; font-size: .8rem; cursor: pointer;
+}
+.instr-select:focus { outline: none; border-color: #7c6af7; }
 
 /* Progress bar */
 .progress-bar { background: #2a2a38; border-radius: 99px; height: 6px; margin-bottom: 1.5rem; overflow: hidden; }

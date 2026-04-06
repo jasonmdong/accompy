@@ -122,6 +122,46 @@ def get_score(name: str):
     }
 
 
+class InstrumentUpdate(BaseModel):
+    part_index: int
+    instrument: str
+
+
+@app.patch("/api/scores/{name}/instrument")
+def update_instrument(name: str, req: InstrumentUpdate):
+    """Persist an instrument change for a part in the score .py file."""
+    mod  = load_score_module(name)
+    path = os.path.join(SCORES_DIR, f"{name}.py")
+
+    if not hasattr(mod, "PARTS"):
+        raise HTTPException(status_code=400, detail="Score has no PARTS (legacy format)")
+    parts = mod.PARTS
+    if req.part_index < 0 or req.part_index >= len(parts):
+        raise HTTPException(status_code=400, detail="Invalid part index")
+
+    parts[req.part_index]["instrument"] = req.instrument
+
+    # Rewrite the file preserving everything, just updating PARTS
+    with open(path, "r") as f:
+        content = f.read()
+
+    import ast
+    # Replace just the PARTS line
+    new_parts_line = f"PARTS = {parts!r}"
+    lines = content.splitlines()
+    new_lines = []
+    for line in lines:
+        if line.startswith("PARTS = "):
+            new_lines.append(new_parts_line)
+        else:
+            new_lines.append(line)
+    with open(path, "w") as f:
+        f.write("\n".join(new_lines) + "\n")
+
+    _score_cache.pop(name, None)
+    return {"updated": True}
+
+
 @app.delete("/api/scores/{name}")
 def delete_score(name: str):
     removed = []
@@ -162,6 +202,7 @@ def convert_score(req: ConvertRequest):
     import re
     from music21 import corpus as m21corpus
     from music21 import converter, note, chord
+    from src.convert_score import _detect_instrument
 
     name = re.sub(r"[^a-zA-Z0-9_]+", "_", req.name).strip("_").lower()
     out_py   = os.path.join(SCORES_DIR, f"{name}.py")
@@ -179,7 +220,8 @@ def convert_score(req: ConvertRequest):
 
     parts_data = []
     for p in score_parts:
-        part_name = p.partName or f"Part {len(parts_data) + 1}"
+        part_name  = p.partName or f"Part {len(parts_data) + 1}"
+        instrument = _detect_instrument(p)
         notes = []
         for el in p.flatten().notesAndRests:
             if isinstance(el, note.Note):
@@ -188,7 +230,7 @@ def convert_score(req: ConvertRequest):
                 top = max(n.pitch.midi for n in el.notes)
                 notes.append([top, float(el.offset)])
         notes.sort(key=lambda x: x[1])
-        parts_data.append({"name": part_name, "notes": notes})
+        parts_data.append({"name": part_name, "instrument": instrument, "notes": notes})
 
     # Write .py
     lines = [

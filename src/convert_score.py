@@ -85,6 +85,54 @@ def write_score_py(parts_data: list, out_path: str, title: str):
         print(f"  {p['name']}: {len(p['notes'])} notes")
 
 
+def _detect_instrument(part) -> str:
+    """Infer an instrument name from a music21 part."""
+    from music21 import instrument as m21i
+    try:
+        instr = part.getInstrument()
+    except Exception:
+        instr = None
+
+    if instr is None:
+        return "piano"
+
+    name = (part.partName or "").lower()
+
+    # Use class hierarchy first (most reliable)
+    if isinstance(instr, m21i.KeyboardInstrument):
+        return "piano"
+    if isinstance(instr, (m21i.Violin,)):
+        return "violin"
+    if isinstance(instr, (m21i.Viola,)):
+        return "viola"
+    if isinstance(instr, (m21i.Violoncello,)):
+        return "cello"
+    if isinstance(instr, m21i.StringInstrument):
+        return "strings"
+    if isinstance(instr, (m21i.Flute,)):
+        return "flute"
+    if isinstance(instr, (m21i.Clarinet,)):
+        return "clarinet"
+    if isinstance(instr, (m21i.Oboe,)):
+        return "oboe"
+    if isinstance(instr, m21i.WoodwindInstrument):
+        return "flute"
+    if isinstance(instr, m21i.BrassInstrument):
+        return "strings"  # approximate brass with strings for now
+
+    # Fall back to part name keywords
+    for kw, result in [
+        ("violin", "violin"), ("viola", "viola"), ("cello", "cello"),
+        ("bass", "cello"), ("flute", "flute"), ("clarinet", "clarinet"),
+        ("oboe", "oboe"), ("soprano", "flute"), ("alto", "clarinet"),
+        ("tenor", "violin"), ("piano", "piano"),
+    ]:
+        if kw in name:
+            return result
+
+    return "piano"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Convert MusicXML to an accompy score")
     parser.add_argument("input", help="Path to .mxl/.xml file, or corpus:<path>")
@@ -113,9 +161,10 @@ def main():
 
     parts_data = []
     for p in score_parts:
-        part_name = p.partName or f"Part {len(parts_data) + 1}"
-        notes = extract_melody(p)
-        parts_data.append({"name": part_name, "notes": notes})
+        part_name  = p.partName or f"Part {len(parts_data) + 1}"
+        instrument = _detect_instrument(p)
+        notes      = extract_melody(p)
+        parts_data.append({"name": part_name, "instrument": instrument, "notes": notes})
 
     title = score.metadata.title if score.metadata and score.metadata.title else args.input
 
