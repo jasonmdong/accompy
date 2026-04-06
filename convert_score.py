@@ -212,17 +212,17 @@ def render_html(mxl_path: str, out_path: str, title: str):
 def show_melody(name: str = None):
     """Print the RIGHT_HAND from scores/<name>.py as note names + keyboard keys."""
     import importlib.util, os
-    if name:
-        path = os.path.join("scores", f"{name}.py")
-        if not os.path.exists(path):
-            print(f"Score not found: {path}")
-            sys.exit(1)
-        spec = importlib.util.spec_from_file_location("_score", path)
-        mod  = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        RIGHT_HAND = mod.RIGHT_HAND
-    else:
-        from score import RIGHT_HAND
+    if not name:
+        print("Usage: python convert_score.py --show <score_name>")
+        sys.exit(1)
+    path = os.path.join("scores", f"{name}.py")
+    if not os.path.exists(path):
+        print(f"Score not found: {path}")
+        sys.exit(1)
+    spec = importlib.util.spec_from_file_location("_score", path)
+    mod  = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    RIGHT_HAND = mod.RIGHT_HAND
 
     _NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
 

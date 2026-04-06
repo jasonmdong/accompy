@@ -24,9 +24,9 @@ import queue
 import tty
 import termios
 import rtmidi
-from tracker import ScoreTracker
-from accompanist import Accompanist
-from synth import play_note as synth_play_note
+from src.tracker import ScoreTracker
+from src.accompanist import Accompanist
+from src.synth import play_note as synth_play_note
 
 
 def load_score(name: str):

@@ -13,7 +13,7 @@ How it works:
 
 import time
 import threading
-from synth import play_chord
+from .synth import play_chord
 
 
 class Accompanist:
