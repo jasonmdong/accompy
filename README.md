@@ -7,7 +7,7 @@ A real-time piano accompanist. You play the right-hand melody — accompy tracks
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install rtmidi numpy sounddevice music21 fastapi uvicorn verovio
+pip install -r requirements.txt
 ```
 
 ## Web UI
@@ -59,18 +59,3 @@ python -m src.convert_score --show mozart_k545
 ```
 
 Free MusicXML sources: [IMSLP](https://imslp.org) · [Flat.io](https://flat.io)
-
-## Structure
-
-```
-run.py             # Start the web server
-src/
-  main.py          # CLI entry point
-  server.py        # Web server
-  convert_score.py # MusicXML → scores/ converter
-  tracker.py       # Score position + tempo tracking
-  accompanist.py   # Left-hand scheduler
-  synth.py         # Software synthesizer
-scores/            # Saved pieces (.py + .html per piece)
-static/            # Web UI
-```
