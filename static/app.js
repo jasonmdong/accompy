@@ -26,12 +26,160 @@ const INSTRUMENT_EMOJI = {
   flute:'🪈', clarinet:'🎷', oboe:'🎷',
 };
 
-// ── Web Audio Synth ─────────────────────────────────────────────────────────
+// ── Playback engines ────────────────────────────────────────────────────────
 let _audioCtx = null;
 function audioCtx() {
-  if (!_audioCtx) _audioCtx = new AudioContext();
+  if (!_audioCtx) _audioCtx = new AudioContext({ latencyHint: 'interactive' });
   return _audioCtx;
 }
+
+const SAMPLE_ALIAS = {
+  viola: 'violin',
+  strings: 'violin',
+  oboe: 'clarinet',
+};
+
+const SAMPLE_LIBRARY = {
+  piano: {
+    baseUrl: 'https://tonejs.github.io/audio/salamander/',
+    release: 0.45,
+    noteDuration: 0.5,
+    urls: {
+      A0: 'A0.mp3',
+      C1: 'C1.mp3',
+      'D#1': 'Ds1.mp3',
+      'F#1': 'Fs1.mp3',
+      A1: 'A1.mp3',
+      C2: 'C2.mp3',
+      'D#2': 'Ds2.mp3',
+      'F#2': 'Fs2.mp3',
+      A2: 'A2.mp3',
+      C3: 'C3.mp3',
+      'D#3': 'Ds3.mp3',
+      'F#3': 'Fs3.mp3',
+      A3: 'A3.mp3',
+      C4: 'C4.mp3',
+      'D#4': 'Ds4.mp3',
+      'F#4': 'Fs4.mp3',
+      A4: 'A4.mp3',
+      C5: 'C5.mp3',
+      'D#5': 'Ds5.mp3',
+      'F#5': 'Fs5.mp3',
+      A5: 'A5.mp3',
+      C6: 'C6.mp3',
+      'D#6': 'Ds6.mp3',
+      'F#6': 'Fs6.mp3',
+      A6: 'A6.mp3',
+      C7: 'C7.mp3',
+      'D#7': 'Ds7.mp3',
+      'F#7': 'Fs7.mp3',
+      A7: 'A7.mp3',
+      C8: 'C8.mp3',
+    },
+  },
+  violin: {
+    baseUrl: 'https://cdn.jsdelivr.net/npm/tonejs-instrument-violin-mp3@1.1.1/',
+    release: 0.35,
+    noteDuration: 0.45,
+    urls: {
+      A3: 'A3.mp3',
+      A4: 'A4.mp3',
+      A5: 'A5.mp3',
+      A6: 'A6.mp3',
+      C4: 'C4.mp3',
+      C5: 'C5.mp3',
+      C6: 'C6.mp3',
+      C7: 'C7.mp3',
+      E4: 'E4.mp3',
+      E5: 'E5.mp3',
+      E6: 'E6.mp3',
+      G3: 'G3.mp3',
+      G4: 'G4.mp3',
+      G5: 'G5.mp3',
+      G6: 'G6.mp3',
+    },
+  },
+  cello: {
+    baseUrl: 'https://cdn.jsdelivr.net/npm/tonejs-instrument-cello-mp3@1.1.1/',
+    release: 0.4,
+    noteDuration: 0.5,
+    urls: {
+      A2: 'A2.mp3',
+      A3: 'A3.mp3',
+      A4: 'A4.mp3',
+      'A#2': 'As2.mp3',
+      'A#3': 'As3.mp3',
+      'A#4': 'As4.mp3',
+      B2: 'B2.mp3',
+      B3: 'B3.mp3',
+      B4: 'B4.mp3',
+      C2: 'C2.mp3',
+      C3: 'C3.mp3',
+      C4: 'C4.mp3',
+      C5: 'C5.mp3',
+      'C#3': 'Cs3.mp3',
+      'C#4': 'Cs4.mp3',
+      D2: 'D2.mp3',
+      D3: 'D3.mp3',
+      D4: 'D4.mp3',
+      'D#2': 'Ds2.mp3',
+      'D#3': 'Ds3.mp3',
+      'D#4': 'Ds4.mp3',
+      E2: 'E2.mp3',
+      E3: 'E3.mp3',
+      E4: 'E4.mp3',
+      F3: 'F3.mp3',
+      F4: 'F4.mp3',
+      'F#3': 'Fs3.mp3',
+      'F#4': 'Fs4.mp3',
+      G2: 'G2.mp3',
+      G3: 'G3.mp3',
+      G4: 'G4.mp3',
+      'G#2': 'Gs2.mp3',
+      'G#3': 'Gs3.mp3',
+      'G#4': 'Gs4.mp3',
+    },
+  },
+  flute: {
+    baseUrl: 'https://cdn.jsdelivr.net/npm/tonejs-instrument-flute-mp3@1.1.2/',
+    release: 0.25,
+    noteDuration: 0.4,
+    urls: {
+      A4: 'A4.mp3',
+      A5: 'A5.mp3',
+      A6: 'A6.mp3',
+      C4: 'C4.mp3',
+      C5: 'C5.mp3',
+      C6: 'C6.mp3',
+      C7: 'C7.mp3',
+      E4: 'E4.mp3',
+      E5: 'E5.mp3',
+      E6: 'E6.mp3',
+    },
+  },
+  clarinet: {
+    baseUrl: 'https://cdn.jsdelivr.net/npm/tonejs-instrument-clarinet-ogg@1.1.0/',
+    release: 0.3,
+    noteDuration: 0.42,
+    urls: {
+      'A#3': 'As3.ogg',
+      'A#4': 'As4.ogg',
+      'A#5': 'As5.ogg',
+      D3: 'D3.ogg',
+      D4: 'D4.ogg',
+      D5: 'D5.ogg',
+      D6: 'D6.ogg',
+      F3: 'F3.ogg',
+      F4: 'F4.ogg',
+      F5: 'F5.ogg',
+      'F#6': 'Fs6.ogg',
+    },
+  },
+};
+
+let _toneReady = false;
+const _sampleSamplers = {};
+const _sampleSamplerReady = {};
 
 // instrument presets: { harmonics: [[mult, amp]], attack, decay, sustain, release, type }
 const INSTRUMENT_PRESETS = {
@@ -45,12 +193,69 @@ const INSTRUMENT_PRESETS = {
   oboe:     { harmonics:[[1,.5],[2,.3],[3,.15],[4,.05]], attack:.02,  decay:.6,  type:'sine' },
 };
 
-function playNote(midi, velocity = 0.6, instrument = 'piano') {
+function midiToToneNote(midi) {
+  return `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
+}
+
+function currentBps() {
+  if (state.tracker) return state.tracker.bps();
+  if (state.accompanist) return state.accompanist._bps;
+  const bpm = parseFloat(document.getElementById('bpm-input')?.value) || 120;
+  return bpm / 60;
+}
+
+function noteDurationSeconds(instrument, baseSeconds) {
+  const sampledInstrument = SAMPLE_ALIAS[instrument] || instrument;
+  const bps = Math.max(0.5, currentBps());
+  const tempoScale = Math.max(0.75, Math.min(1.9, 2 / bps));
+  const familyBoost = ['violin', 'viola', 'cello', 'strings'].includes(instrument) ? 1.15 : 1.0;
+  const aliasBoost = ['violin', 'cello'].includes(sampledInstrument) ? 1.1 : 1.0;
+  return Math.max(0.18, Math.min(1.25, baseSeconds * tempoScale * familyBoost * aliasBoost));
+}
+
+async function ensureSamplePlayback(instruments = []) {
+  const requested = [...new Set(instruments
+    .map(ins => SAMPLE_ALIAS[ins] || ins)
+    .filter(ins => SAMPLE_LIBRARY[ins]))];
+  if (!requested.length || typeof Tone === 'undefined') return false;
+
+  if (!_toneReady) {
+    await Tone.start();
+    _toneReady = true;
+  }
+
+  const loaded = await Promise.all(requested.map(async (instrument) => {
+    if (!_sampleSamplerReady[instrument]) {
+      const config = SAMPLE_LIBRARY[instrument];
+      _sampleSamplerReady[instrument] = new Promise((resolve, reject) => {
+        _sampleSamplers[instrument] = new Tone.Sampler({
+          urls: config.urls,
+          baseUrl: config.baseUrl,
+          release: config.release,
+          onload: resolve,
+          onerror: reject,
+        }).toDestination();
+      }).catch((error) => {
+        console.warn(`Tone sampler load failed for ${instrument}:`, error);
+        _sampleSamplerReady[instrument] = null;
+        _sampleSamplers[instrument] = null;
+        return false;
+      });
+    }
+    const ready = await _sampleSamplerReady[instrument];
+    return ready !== false && !!_sampleSamplers[instrument];
+  }));
+
+  return loaded.some(Boolean);
+}
+
+function playSynthNote(midi, velocity = 0.6, instrument = 'piano') {
   const ctx    = audioCtx();
   const freq   = 440 * Math.pow(2, (midi - 69) / 12);
   const preset = INSTRUMENT_PRESETS[instrument] || INSTRUMENT_PRESETS.piano;
   const now    = ctx.currentTime;
-  const dur    = instrument === 'piano' ? 1.2 : 1.5;
+  const baseDur = instrument === 'piano' ? 0.55 : 0.5;
+  const dur    = noteDurationSeconds(instrument, baseDur);
 
   const masterGain = ctx.createGain();
   masterGain.connect(ctx.destination);
@@ -94,6 +299,18 @@ function playNote(midi, velocity = 0.6, instrument = 'piano') {
   }
 }
 
+function playNote(midi, velocity = 0.6, instrument = 'piano') {
+  const sampledInstrument = SAMPLE_ALIAS[instrument] || instrument;
+  const sampler = _sampleSamplers[sampledInstrument];
+  if (sampler) {
+    const baseDuration = SAMPLE_LIBRARY[sampledInstrument]?.noteDuration ?? 0.45;
+    const duration = noteDurationSeconds(instrument, baseDuration);
+    sampler.triggerAttackRelease(midiToToneNote(midi), duration, undefined, Math.min(1, velocity));
+    return;
+  }
+  playSynthNote(midi, velocity, instrument);
+}
+
 function playChord(pitches, velocity = 0.5, instrument = 'piano') {
   pitches.forEach(p => playNote(p, velocity / pitches.length + 0.3, instrument));
 }
@@ -108,17 +325,24 @@ class Tracker {
   }
 
   onNote(pitch) {
-    const end = Math.min(this.position + 3, this.score.length);
-    for (let i = this.position; i < end; i++) {
-      if (this.score[i][0] === pitch) {
-        this.position = i + 1;
-        const beat = this.score[i][1];
-        this.timestamps.push({ time: performance.now() / 1000, beat });
-        if (this.timestamps.length > 5) this.timestamps.shift();
-        return beat;
-      }
-    }
-    return null;
+    const expected = this.score[this.position];
+    if (!expected) return null;
+    return expected[0] === pitch ? this._advance(this.position) : null;
+  }
+
+  // Mic mode: accept only the current note, with a small pitch tolerance.
+  onNoteFuzzy(midi) {
+    const expected = this.score[this.position];
+    if (!expected) return null;
+    return Math.abs(expected[0] - midi) <= 1 ? this._advance(this.position) : null;
+  }
+
+  _advance(i) {
+    this.position = i + 1;
+    const beat = this.score[i][1];
+    this.timestamps.push({ time: performance.now() / 1000, beat });
+    if (this.timestamps.length > 5) this.timestamps.shift();
+    return beat;
   }
 
   bps() {
@@ -272,6 +496,8 @@ async function openScore(name) {
   state.current = data;
   state.selectedPart = 0;
   state.partInstruments = {};
+  _stopMic();
+  setInputMode('keyboard');
 
   document.getElementById('play-title').textContent = formatName(name);
   document.getElementById('progress-fill').style.width = '0%';
@@ -316,6 +542,7 @@ async function openScore(name) {
   }
 
   buildKeyboard(getRightHand());
+  updateNextKey(getRightHand(), 0);
   showScreen('play-screen');
   document.getElementById('start-btn').disabled = false;
   document.getElementById('stop-btn').disabled  = true;
@@ -326,7 +553,7 @@ function selectPart(idx) {
   document.querySelectorAll('.part-btn').forEach((b, i) =>
     b.classList.toggle('selected', i === idx));
   buildKeyboard(getRightHand());
-  document.getElementById('next-note-display').textContent = '—';
+  updateNextKey(getRightHand(), 0);
 }
 
 function getInstrumentForPart(idx) {
@@ -425,12 +652,11 @@ function updateNextKey(rightHand, position) {
   const midi = rightHand[position][0];
   const key  = buildPitchToKey()[midi];
   if (key) document.getElementById(`kbkey-${key}`)?.classList.add('next');
-
   document.getElementById('next-note-display').textContent = pitchName(midi);
 }
 
 // ── Start / Stop ──────────────────────────────────────────────────────────────
-function startPlaying() {
+async function startPlaying() {
   audioCtx().resume(); // unblock audio on user gesture
 
   const bpm        = parseFloat(document.getElementById('bpm-input').value) || 100;
@@ -445,6 +671,18 @@ function startPlaying() {
     .map((_, i) => i)
     .filter(i => i !== sel)
     .map(i => getInstrumentForPart(i));
+  const instrumentsInUse = [getInstrumentForPart(sel), ...leftInstruments];
+
+  const startBtn = document.getElementById('start-btn');
+  startBtn.disabled = true;
+  const originalLabel = startBtn.textContent;
+  startBtn.textContent = 'Loading...';
+
+  try {
+    await ensureSamplePlayback(instrumentsInUse);
+  } finally {
+    startBtn.textContent = originalLabel;
+  }
 
   state.tracker     = new Tracker(right, initialBps);
   state.accompanist = new Accompanist(left, right, initialBps, leftInstruments);
@@ -456,10 +694,12 @@ function startPlaying() {
 
   updateNextKey(right, 0);
   enableMidi();
+  if (_inputMode === 'mic') _startMic();
 }
 
 function stopPlaying() {
   if (state.accompanist) state.accompanist.stop();
+  _stopMic();
   state.playing = false;
   document.getElementById('start-btn').disabled = false;
   document.getElementById('stop-btn').disabled  = true;
@@ -467,6 +707,21 @@ function stopPlaying() {
 }
 
 // ── Note handler (called by keyboard and MIDI) ────────────────────────────────
+function handleNoteMic(midi) {
+  if (!state.playing || !state.tracker) return;
+  const beat = state.tracker.onNoteFuzzy(midi);
+  if (beat !== null) {
+    const bps = state.tracker.bps();
+    state.accompanist.onRhNote(beat, bps);
+    document.getElementById('beat-val').textContent  = beat.toFixed(1);
+    document.getElementById('tempo-val').textContent = Math.round(bps * 60) + ' BPM';
+    document.getElementById('progress-fill').style.width =
+      (state.tracker.progress() * 100).toFixed(1) + '%';
+    updateNextKey(getRightHand(), state.tracker.position);
+  }
+  if (state.tracker.isFinished()) stopPlaying();
+}
+
 function handleNote(midi) {
   if (!state.playing || !state.tracker) return;
   playNote(midi, 0.6, getInstrumentForPart(state.selectedPart ?? 0));
@@ -486,6 +741,160 @@ function handleNote(midi) {
   }
 
   if (state.tracker.isFinished()) stopPlaying();
+}
+
+// ── Input mode ───────────────────────────────────────────────────────────────
+let _inputMode        = 'keyboard';
+let _pitchDetector    = null;
+let _selectedMicId    = null;
+let _selectedSpeakerId = null;
+
+function setInputMode(mode) {
+  _inputMode = mode;
+  document.getElementById('tab-keyboard').classList.toggle('active', mode === 'keyboard');
+  document.getElementById('tab-mic').classList.toggle('active', mode === 'mic');
+  document.getElementById('mic-controls').style.display    = mode === 'mic' ? 'block' : 'none';
+  document.getElementById('keyboard-section').style.display = mode === 'keyboard' ? 'block' : 'none';
+
+  if (mode === 'mic') {
+    _startMic();
+  } else {
+    _stopMic();
+  }
+}
+
+function onNoiseGateChange(val) {
+  document.getElementById('noise-gate-val').textContent = val;
+  if (_pitchDetector) _pitchDetector.setThreshold(val / 1000);
+  _drawMeter(_lastRms);  // redraw so threshold line updates immediately
+}
+
+// ── Level meter ───────────────────────────────────────────────────────────────
+let _lastRms = 0;
+let _peakRms = 0;
+let _peakHold = 0;
+
+function _drawMeter(rms) {
+  _lastRms = rms;
+  const fill  = document.getElementById('level-fill');
+  const peak  = document.getElementById('level-peak');
+  const gate  = document.getElementById('level-gate');
+  const label = document.getElementById('level-gate-label');
+  if (!fill) return;
+
+  const gateVal   = parseFloat(document.getElementById('noise-gate')?.value || 8) / 1000;
+  const scale     = v => Math.min(v / 0.15, 1.0) * 100;  // % of bar width
+  const fillPct   = scale(rms);
+  const gatePct   = scale(gateVal);
+  const aboveGate = rms >= gateVal;
+
+  // Peak hold
+  if (rms > _peakRms) { _peakRms = rms; _peakHold = 50; }
+  else if (_peakHold > 0) _peakHold--;
+  else _peakRms = Math.max(_peakRms * 0.95, 0);
+  const peakPct = scale(_peakRms);
+
+  fill.style.width = fillPct + '%';
+  fill.classList.toggle('active', aboveGate);
+
+  peak.style.left  = Math.min(peakPct, 99) + '%';
+  gate.style.left  = gatePct + '%';
+
+  const labelLeft = gatePct > 85 ? gatePct - 6 : gatePct + 0.5;
+  label.style.left = labelLeft + '%';
+}
+
+function _micDot(state) {
+  const dot  = document.getElementById('mic-dot');
+  const text = document.getElementById('mic-status-text');
+  dot.className = 'mic-status-dot' + (state ? ' ' + state : '');
+  text.textContent = state === 'active'  ? 'Listening…'
+                   : state === 'hearing' ? 'Note detected'
+                   : 'Mic off';
+}
+
+async function _populateMicList() {
+  try {
+    // Need a temporary permission grant to get device labels
+    const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+    tmp.getTracks().forEach(t => t.stop());
+  } catch { return; }
+
+  const devices   = await navigator.mediaDevices.enumerateDevices();
+  const mics      = devices.filter(d => d.kind === 'audioinput');
+  const speakers  = devices.filter(d => d.kind === 'audiooutput');
+
+  const micSel = document.getElementById('mic-select');
+  micSel.innerHTML = mics.map(d =>
+    `<option value="${d.deviceId}"${d.deviceId === _selectedMicId ? ' selected' : ''}>${d.label || 'Microphone ' + d.deviceId.slice(0,6)}</option>`
+  ).join('');
+  if (!_selectedMicId && mics.length) _selectedMicId = mics[0].deviceId;
+
+  const spkSel = document.getElementById('speaker-select');
+  spkSel.innerHTML = '<option value="">— default —</option>' + speakers.map(d =>
+    `<option value="${d.deviceId}"${d.deviceId === _selectedSpeakerId ? ' selected' : ''}>${d.label || 'Speaker ' + d.deviceId.slice(0,6)}</option>`
+  ).join('');
+}
+
+async function onMicChange() {
+  const sel = document.getElementById('mic-select');
+  _selectedMicId = sel.value;
+  if (_pitchDetector) {
+    _stopMic();
+    await _startMic();
+  }
+}
+
+async function onSpeakerChange() {
+  const sel = document.getElementById('speaker-select');
+  _selectedSpeakerId = sel.value;
+  const ctx = audioCtx();
+  if (ctx.setSinkId) {
+    try { await ctx.setSinkId(_selectedSpeakerId || ''); } catch (e) { console.warn('setSinkId failed:', e); }
+  }
+}
+
+async function _startMic() {
+  if (_pitchDetector) return;
+  await _populateMicList();
+  const gate = parseFloat(document.getElementById('noise-gate').value) / 1000;
+  _pitchDetector = new PitchDetector(audioCtx(), {
+    threshold: gate,
+    deviceId: _selectedMicId || undefined,
+    onNote: (midi, info) => {
+      _micDot('hearing');
+      const freqText = info?.freq ? ` ${info.freq.toFixed(1)} Hz` : '';
+      document.getElementById('mic-note-display').textContent = `${pitchName(midi)}${freqText}`;
+      handleNoteMic(midi);
+      setTimeout(() => { if (_pitchDetector) _micDot('active'); }, 300);
+    },
+    onSilence: () => {
+      document.getElementById('mic-note-display').textContent = '';
+      _micDot('active');
+    },
+    onLevel: (rms) => _drawMeter(rms),
+    onDebug: (msg) => { document.getElementById('mic-debug').textContent = msg; },
+  });
+
+  // Keep meter decaying to zero when silent
+  (function decayLoop() {
+    if (!_pitchDetector) { _drawMeter(0); return; }
+    requestAnimationFrame(decayLoop);
+  })();
+  try {
+    await _pitchDetector.start();
+    _micDot('active');
+  } catch (e) {
+    alert(e.message);
+    setInputMode('keyboard');
+  }
+}
+
+function _stopMic() {
+  if (_pitchDetector) { _pitchDetector.stop(); _pitchDetector = null; }
+  _micDot(null);
+  document.getElementById('mic-note-display').textContent = '';
+  document.getElementById('mic-debug').textContent = '';
 }
 
 // ── Computer keyboard input ───────────────────────────────────────────────────

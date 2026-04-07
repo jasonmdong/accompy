@@ -86,6 +86,53 @@ header h1 span { color: #7c6af7; }
   color: #7c6af7; margin-top: .5rem; letter-spacing: .05em;
 }
 
+/* ── Input mode ── */
+.input-mode-section {
+  background: #1a1a26; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;
+}
+.input-mode-tabs { display: flex; gap: .5rem; margin-bottom: .75rem; }
+.mode-tab {
+  padding: .4rem 1rem; border-radius: 6px; border: 1px solid #3a3a50;
+  background: #0f0f13; color: #aaa; font-size: .85rem; cursor: pointer; transition: all .15s;
+}
+.mode-tab.active { background: #7c6af7; border-color: #7c6af7; color: #fff; font-weight: 600; }
+.mic-row { display: flex; align-items: center; gap: .6rem; }
+.mic-status-dot {
+  width: 10px; height: 10px; border-radius: 50%; background: #333; flex-shrink: 0;
+  transition: background .2s;
+}
+.mic-status-dot.active  { background: #5aaa60; box-shadow: 0 0 6px #5aaa60; }
+.mic-status-dot.hearing { background: #7c6af7; box-shadow: 0 0 8px #7c6af7; }
+
+.level-meter-wrap { width: 100%; }
+.level-meter-track {
+  position: relative; width: 100%; height: 28px;
+  background: #0f0f13; border-radius: 6px; overflow: visible;
+  border: 1px solid #2a2a38;
+}
+.level-meter-fill {
+  position: absolute; left: 0; top: 0; height: 100%;
+  width: 0%; border-radius: 6px;
+  background: linear-gradient(to right, #2a7a35, #5aaa60);
+  transition: width 0.04s linear;
+}
+.level-meter-fill.active {
+  background: linear-gradient(to right, #5040b0, #7c6af7);
+}
+.level-meter-peak {
+  position: absolute; top: 4px; width: 3px; height: 20px;
+  background: #fff; border-radius: 2px; opacity: 0.7;
+  transition: left 0.05s;
+}
+.level-meter-gate {
+  position: absolute; top: 0; width: 2px; height: 100%;
+  background: #e05c5c;
+}
+.level-gate-label {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  font-size: 10px; color: #e05c5c; white-space: nowrap; pointer-events: none;
+}
+
 /* Keyboard viz */
 .keyboard-section { background: #1a1a26; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem; }
 .keyboard-section h4 { font-size: .85rem; color: #aaa; margin-bottom: .75rem; }

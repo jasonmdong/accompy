@@ -15,9 +15,6 @@ from collections import deque
 # How many recent inter-note intervals to average for tempo estimation.
 TEMPO_WINDOW = 4
 
-# How many notes ahead/behind to search for a pitch match (robustness).
-LOOKAHEAD = 3
-
 class ScoreTracker:
     def __init__(self, right_hand: list, initial_bps: float = 2.0):
         self.score = right_hand          # [(pitch, beat), ...]
@@ -79,12 +76,10 @@ class ScoreTracker:
 
     def _find_match(self, pitch: int) -> int | None:
         """
-        Search from current position up to LOOKAHEAD notes ahead for a pitch match.
+        Match only the next expected score note.
         Returns the matched index in self.score, or None.
         """
-        end = min(self.position + LOOKAHEAD, len(self.score))
-        for i in range(self.position, end):
-            expected_pitch, _ = self.score[i]
-            if pitch == expected_pitch:
-                return i
-        return None
+        if self.position >= len(self.score):
+            return None
+        expected_pitch, _ = self.score[self.position]
+        return self.position if pitch == expected_pitch else None

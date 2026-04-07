@@ -95,8 +95,59 @@
 
   </div>
 
+  <!-- Input mode toggle -->
+  <div class="input-mode-section">
+    <div class="input-mode-tabs">
+      <button class="mode-tab active" id="tab-keyboard" onclick="setInputMode('keyboard')">⌨ Keyboard</button>
+      <button class="mode-tab" id="tab-mic"      onclick="setInputMode('mic')">🎙 Microphone</button>
+    </div>
+
+    <!-- Mic controls (hidden by default) -->
+    <div id="mic-controls" style="display:none">
+      <div class="mic-row">
+        <div class="mic-status-dot" id="mic-dot"></div>
+        <span id="mic-status-text" style="font-size:.85rem;color:#aaa">Mic off</span>
+        <span id="mic-note-display" style="font-size:.85rem;font-weight:700;color:#7c6af7;margin-left:auto"></span>
+        <span id="mic-debug" style="font-size:.75rem;color:#555;margin-left:.75rem;font-family:monospace"></span>
+      </div>
+      <div class="mic-row" style="margin-top:.6rem">
+        <label style="font-size:.8rem;color:#aaa;width:100px">Microphone</label>
+        <select id="mic-select" class="instr-select" style="flex:1" onchange="onMicChange()">
+          <option value="">— select —</option>
+        </select>
+      </div>
+      <div class="mic-row" style="margin-top:.6rem">
+        <label style="font-size:.8rem;color:#aaa;width:100px">Speaker</label>
+        <select id="speaker-select" class="instr-select" style="flex:1" onchange="onSpeakerChange()">
+          <option value="">— default —</option>
+        </select>
+      </div>
+
+      <!-- Level meter -->
+      <div class="level-meter-wrap" style="margin-top:.75rem">
+        <div class="level-meter-track" id="level-track">
+          <div class="level-meter-fill" id="level-fill"></div>
+          <div class="level-meter-peak" id="level-peak"></div>
+          <div class="level-meter-gate" id="level-gate"></div>
+          <span class="level-gate-label" id="level-gate-label">gate</span>
+        </div>
+      </div>
+
+      <div class="mic-row" style="margin-top:.6rem">
+        <label style="font-size:.8rem;color:#aaa;width:100px">Noise gate</label>
+        <input id="noise-gate" type="range" min="1" max="80" value="8"
+               oninput="onNoiseGateChange(this.value)" style="flex:1">
+        <span id="noise-gate-val" style="font-size:.8rem;color:#555;width:36px;text-align:right">8</span>
+      </div>
+      <p style="font-size:.75rem;color:#555;margin-top:.5rem;line-height:1.5">
+        The bar shows input level. The red line is the noise gate — sounds below it are ignored.<br>
+        Raise the gate if false notes fire; lower it if your playing isn't registering.
+      </p>
+    </div>
+  </div>
+
   <!-- Keyboard layout -->
-  <div class="keyboard-section">
+  <div class="keyboard-section" id="keyboard-section">
     <h4>Keyboard layout — press the highlighted key</h4>
     <div class="kb-layout">
       <div id="kb-row-0" class="kb-row"></div>
@@ -117,6 +168,8 @@
 
 </div>
 
+<script src="https://unpkg.com/tone@15.1.22/build/Tone.js"></script>
+<script src="pitch.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
