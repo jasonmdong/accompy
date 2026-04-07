@@ -16,7 +16,7 @@ import importlib.util
 from functools import lru_cache
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -139,10 +139,17 @@ def search_corpus(q: str = ""):
 
 @app.get("/api/scores")
 def list_scores():
-    names = sorted(
-        f[:-3] for f in os.listdir(SCORES_DIR) if f.endswith(".py")
-    )
-    return {"scores": names}
+    names = sorted(f[:-3] for f in os.listdir(SCORES_DIR) if f.endswith(".py"))
+    return {
+        "scores": names,
+        "items": [
+            {
+                "name": name,
+                "has_sheet": os.path.exists(os.path.join(SCORES_DIR, f"{name}.html")),
+            }
+            for name in names
+        ],
+    }
 
 
 @app.get("/api/scores/{name}")
@@ -240,7 +247,17 @@ def get_sheet(name: str):
     path = os.path.join(SCORES_DIR, f"{name}.html")
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="No sheet music for this score")
-    return FileResponse(path, media_type="text/html")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            html = f.read()
+    except OSError:
+        raise HTTPException(status_code=500, detail="Could not read sheet music")
+
+    # Older generated sheet pages include a print/save heading that looks out of
+    # place inside the app iframe. Strip it at serve time so existing scores do
+    # not need to be regenerated.
+    html = re.sub(r"\s*<h1>.*?</h1>\s*", "\n", html, count=1, flags=re.IGNORECASE | re.DOTALL)
+    return HTMLResponse(content=html)
 
 
 class ConvertRequest(BaseModel):

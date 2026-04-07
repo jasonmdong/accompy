@@ -11,6 +11,7 @@
 <header>
   <h1>acc<span>ompy</span></h1>
   <small id="midi-status" style="color:#555;font-size:.8rem;margin-left:auto"></small>
+  <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle light and dark mode">Light</button>
 </header>
 
 <!-- ── Score list ── -->
@@ -20,6 +21,16 @@
     <button class="btn btn-primary" onclick="openAddModal()">+ Add piece</button>
   </div>
   <p style="font-size:.85rem;color:#555;margin-bottom:.5rem">Play the right-hand melody — the left hand follows your tempo.</p>
+  <div class="score-grid-toolbar">
+    <label for="score-grid-columns">Preview columns</label>
+    <select id="score-grid-columns" class="instr-select" onchange="setScoreGridColumns(this.value)">
+      <option value="2">2</option>
+      <option value="3" selected>3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+    </select>
+  </div>
   <div id="score-grid" class="score-grid"></div>
 </div>
 
@@ -45,64 +56,84 @@
 <!-- ── Play screen ── -->
 <div id="play-screen" class="screen">
 
-  <div class="top-row">
-    <button class="btn btn-ghost" onclick="showScreen('list-screen')">← Back</button>
-    <h2 id="play-title"></h2>
+  <div class="play-header">
+    <div class="top-row">
+      <button class="btn btn-ghost" onclick="showScreen('list-screen')">← Back</button>
+      <h2 id="play-title"></h2>
+    </div>
+
+    <div class="controls controls-top">
+      <label>Starting tempo</label>
+      <div class="tempo-row">
+        <div class="bpm-row">
+          <input id="bpm-input" type="number" value="60" min="20" max="300">
+          <span style="color:#555;font-size:.85rem">BPM</span>
+        </div>
+        <div class="tempo-actions">
+          <button id="start-btn" class="btn btn-primary" onclick="startPlaying()">▶ Start</button>
+          <button id="stop-btn" class="btn btn-danger" onclick="stopPlaying()" disabled>■ Stop</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width:0%"></div></div>
 
-  <!-- Part picker -->
-  <div id="part-picker" class="part-picker" style="display:none">
-    <h4>Choose your part</h4>
-    <div id="part-buttons" class="part-buttons"></div>
+  <!-- Keyboard layout -->
+  <div class="keyboard-section" id="keyboard-section">
+    <div class="keyboard-heading">
+      <h4>Keyboard layout</h4>
+      <div class="help-tip" tabindex="0" aria-label="Keyboard layout help">
+        ?
+        <div class="help-tip-popup">A S D J K L ; play C D E F G A B. Hold Shift for sharps.</div>
+      </div>
+    </div>
+    <div class="kb-layout">
+      <div id="kb-row-main" class="kb-row"></div>
+    </div>
   </div>
 
-  <div class="play-top">
-
-    <!-- Controls -->
-    <div class="controls">
-      <label>Starting tempo</label>
-      <div class="bpm-row">
-        <input id="bpm-input" type="number" value="60" min="20" max="300">
-        <span style="color:#555;font-size:.85rem">BPM</span>
-      </div>
-      <div style="display:flex;gap:.6rem;margin-top:1rem">
-        <button id="start-btn" class="btn btn-primary" onclick="startPlaying()">▶ Start</button>
-        <button id="stop-btn"  class="btn btn-danger"  onclick="stopPlaying()" disabled>■ Stop</button>
-      </div>
-      <p style="margin-top:1rem;font-size:.78rem;color:#555;line-height:1.5">
-        Use your computer keyboard or a USB MIDI keyboard.<br>
-        The left hand will play between your notes and wait for you when needed.
-      </p>
+  <!-- Sheet music -->
+  <div class="sheet-section">
+    <h4>Sheet music</h4>
+    <iframe id="sheet-frame" style="display:none"></iframe>
+    <div id="sheet-placeholder" class="sheet-placeholder">
+      No sheet music available for this score.<br>
+      Re-run <code>convert_score.py</code> with verovio installed to generate it.
     </div>
-
-    <!-- Status -->
-    <div class="status-panel">
-      <div class="status-row">
-        <span>Current beat</span>
-        <span class="status-val" id="beat-val">—</span>
-      </div>
-      <div class="status-row">
-        <span>Detected tempo</span>
-        <span class="status-val" id="tempo-val">—</span>
-      </div>
-      <div class="status-row">
-        <span>Next note</span>
-      </div>
-      <div id="next-note-display">—</div>
-    </div>
-
   </div>
 
-  <!-- Input mode toggle -->
+  <div class="play-bottom">
+    <div id="part-picker" class="part-picker" style="display:none">
+      <h4>Choose your part</h4>
+      <div id="part-buttons" class="part-buttons"></div>
+    </div>
+
+    <div class="controls-panel">
+      <div class="status-panel">
+        <div class="status-row">
+          <span>Current beat</span>
+          <span class="status-val" id="beat-val">—</span>
+        </div>
+        <div class="status-row">
+          <span>Detected tempo</span>
+          <span class="status-val" id="tempo-val">—</span>
+        </div>
+        <div class="status-row">
+          <span>Next note</span>
+        </div>
+        <div id="next-note-display">—</div>
+      </div>
+    </div>
+  </div>
+
   <div class="input-mode-section">
+    <h4>Input</h4>
     <div class="input-mode-tabs">
       <button class="mode-tab active" id="tab-keyboard" onclick="setInputMode('keyboard')">⌨ Keyboard</button>
-      <button class="mode-tab" id="tab-mic"      onclick="setInputMode('mic')">🎙 Microphone</button>
+      <button class="mode-tab" id="tab-mic" onclick="setInputMode('mic')">🎙 Microphone</button>
     </div>
 
-    <!-- Mic controls (hidden by default) -->
     <div id="mic-controls" style="display:none">
       <div class="mic-row">
         <div class="mic-status-dot" id="mic-dot"></div>
@@ -123,7 +154,6 @@
         </select>
       </div>
 
-      <!-- Level meter -->
       <div class="level-meter-wrap" style="margin-top:.75rem">
         <div class="level-meter-track" id="level-track">
           <div class="level-meter-fill" id="level-fill"></div>
@@ -143,24 +173,6 @@
         The bar shows input level. The red line is the noise gate — sounds below it are ignored.<br>
         Raise the gate if false notes fire; lower it if your playing isn't registering.
       </p>
-    </div>
-  </div>
-
-  <!-- Keyboard layout -->
-  <div class="keyboard-section" id="keyboard-section">
-    <h4>Keyboard layout — A S D J K L ; for C D E F G A B, hold Shift for sharps</h4>
-    <div class="kb-layout">
-      <div id="kb-row-main" class="kb-row"></div>
-    </div>
-  </div>
-
-  <!-- Sheet music -->
-  <div class="sheet-section">
-    <h4>Sheet music</h4>
-    <iframe id="sheet-frame" style="display:none"></iframe>
-    <div id="sheet-placeholder" class="sheet-placeholder">
-      No sheet music available for this score.<br>
-      Re-run <code>convert_score.py</code> with verovio installed to generate it.
     </div>
   </div>
 

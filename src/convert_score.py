@@ -235,7 +235,6 @@ def render_html(mxl_path: str, out_path: str, title: str):
   </style>
 </head>
 <body>
-  <h1>{title} — open in browser and use File → Print to save as PDF</h1>
   {page_divs}
 </body>
 </html>"""

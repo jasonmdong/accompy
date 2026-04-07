@@ -13,10 +13,10 @@ const SHARPABLE_CODES = new Set(['KeyA', 'KeyS', 'KeyJ', 'KeyK', 'KeyL']);
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 function pitchName(midi) { return NOTE_NAMES[midi % 12] + (Math.floor(midi/12)-1); }
 
-const INSTRUMENTS = ['piano','violin','viola','cello','strings','flute','clarinet','oboe'];
+const INSTRUMENTS = ['piano','violin','viola','cello','strings','flute','clarinet','oboe','voice'];
 const INSTRUMENT_EMOJI = {
   piano:'🎹', violin:'🎻', viola:'🎻', cello:'🎻', strings:'🎻',
-  flute:'🪈', clarinet:'🎷', oboe:'🎷',
+  flute:'🪈', clarinet:'🎷', oboe:'🎷', voice:'🎤',
 };
 
 // ── Playback engines ────────────────────────────────────────────────────────
@@ -184,6 +184,7 @@ const INSTRUMENT_PRESETS = {
   flute:    { harmonics:[[1,.85],[2,.12],[3,.03]], attack:.04, decay:.4,  type:'sine',  noise:.04  },
   clarinet: { harmonics:[[1,.7],[3,.25],[5,.08],[7,.03]], attack:.025, decay:.5, type:'sine' },
   oboe:     { harmonics:[[1,.5],[2,.3],[3,.15],[4,.05]], attack:.02,  decay:.6,  type:'sine' },
+  voice:    { harmonics:[[1,.62],[2,.2],[3,.1],[4,.05],[5,.03]], attack:.05, decay:.55, type:'triangle', vibrato:true },
 };
 
 function midiToToneNote(midi) {
@@ -427,6 +428,7 @@ let state = {
   playing:          false,
   selectedPart:     0,
   partInstruments:  {},  // partIndex → instrument name override
+  scoreGridColumns: 3,
 };
 
 let _sheetMeasureEls = [];
@@ -446,20 +448,142 @@ function showScreen(id) {
   document.getElementById(id).classList.add('active');
 }
 
+function normalizedScoreGridColumns(value) {
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n)) return 3;
+  return Math.max(2, Math.min(6, n));
+}
+
+function applyScoreGridColumns(value) {
+  const columns = normalizedScoreGridColumns(value);
+  state.scoreGridColumns = columns;
+  document.getElementById('score-grid')?.style.setProperty('--score-grid-columns', String(columns));
+  const select = document.getElementById('score-grid-columns');
+  if (select && select.value !== String(columns)) select.value = String(columns);
+  requestAnimationFrame(() => resizeScorePreviews());
+}
+
+function setScoreGridColumns(value) {
+  const columns = normalizedScoreGridColumns(value);
+  applyScoreGridColumns(columns);
+  localStorage.setItem('accompy_score_grid_columns', String(columns));
+}
+
+function applyTheme(theme) {
+  const normalized = theme === 'light' ? 'light' : 'dark';
+  document.body.classList.toggle('light', normalized === 'light');
+  const toggle = document.getElementById('theme-toggle');
+  if (toggle) toggle.textContent = normalized === 'light' ? 'Dark' : 'Light';
+  localStorage.setItem('accompy_theme', normalized);
+  document.querySelectorAll('#sheet-frame, .score-preview-frame').forEach((frame) => sanitizeSheetFrame(frame));
+}
+
+function toggleTheme() {
+  applyTheme(document.body.classList.contains('light') ? 'dark' : 'light');
+}
+
+function resizeScorePreviews() {
+  document.querySelectorAll('.score-preview-frame').forEach((frame) => {
+    const preview = frame.parentElement;
+    if (!preview) return;
+    const width = preview.clientWidth;
+    if (!width) return;
+    preview.style.setProperty('--preview-scale', String(width / 960));
+  });
+}
+
+function sanitizeSheetFrame(frame) {
+  const doc = frame?.contentDocument;
+  if (!doc) return;
+  const darkMode = !document.body.classList.contains('light');
+
+  doc.querySelectorAll('h1').forEach((el) => el.remove());
+
+  let style = doc.getElementById('accompy-sheet-cleanup-style');
+  if (!style) {
+    style = doc.createElement('style');
+    style.id = 'accompy-sheet-cleanup-style';
+    doc.head?.appendChild(style);
+  }
+
+  style.textContent = `
+    h1 { display: none !important; }
+    body {
+      padding-top: 0 !important;
+      margin-top: 0 !important;
+      background: ${darkMode ? '#0f0f13' : '#f4f1ea'} !important;
+      color: ${darkMode ? '#f2efe8' : '#111318'} !important;
+    }
+    .page {
+      background: ${darkMode ? '#181824' : '#ffffff'} !important;
+      box-shadow: ${darkMode ? '0 6px 18px rgba(0,0,0,.55)' : '0 2px 6px rgba(0,0,0,.18)'} !important;
+    }
+    svg {
+      color: ${darkMode ? '#f2efe8' : '#111318'} !important;
+    }
+    svg :is(path, ellipse, polygon, polyline, line, text, tspan, use):not(.accompy-measure-highlight) {
+      ${darkMode ? 'fill: #f2efe8 !important; stroke: #f2efe8 !important;' : ''}
+    }
+    svg use {
+      ${darkMode ? 'color: #f2efe8 !important; fill: #f2efe8 !important; stroke: #f2efe8 !important;' : ''}
+    }
+    svg rect:not(.accompy-measure-highlight) {
+      ${darkMode ? 'fill: #f2efe8 !important; stroke: #f2efe8 !important;' : ''}
+    }
+    svg [fill="none"] {
+      fill: none !important;
+    }
+    svg [stroke="none"] {
+      stroke: none !important;
+    }
+    svg rect[fill="white"],
+    svg rect[fill="#ffffff"],
+    svg rect[fill="#FFF"],
+    svg rect[fill="#fff"] {
+      fill: ${darkMode ? '#181824' : '#ffffff'} !important;
+      stroke: ${darkMode ? '#181824' : '#ffffff'} !important;
+    }
+  `;
+  doc.documentElement.style.colorScheme = darkMode ? 'dark' : 'light';
+  if (darkMode) {
+    doc.body?.classList.add('accompy-dark-sheet');
+  } else {
+    doc.body?.classList.remove('accompy-dark-sheet');
+  }
+}
+
 // ── Score list screen ─────────────────────────────────────────────────────────
 async function loadScoreList() {
-  const { scores } = await api('/api/scores');
+  applyScoreGridColumns(state.scoreGridColumns);
+  const { scores = [], items = [] } = await api('/api/scores');
   state.scores = scores;
   const grid = document.getElementById('score-grid');
-  grid.innerHTML = scores.map(name => `
-    <div class="score-card" id="card-${name}">
-      <div onclick="openScore('${name}')" style="flex:1;cursor:pointer">
+  const scoreItems = items.length ? items : scores.map(name => ({ name, has_sheet: false }));
+  grid.innerHTML = scoreItems.map(({ name, has_sheet }) => `
+    <div class="score-card" id="card-${name}" onclick="openScore('${name}')">
+      <button class="delete-btn" onclick="deleteScore(event, '${name}')" title="Remove">✕</button>
+      <div class="score-preview${has_sheet ? '' : ' empty'}">
+        ${has_sheet
+          ? `<iframe
+              class="score-preview-frame"
+              src="/api/scores/${encodeURIComponent(name)}/sheet"
+              loading="lazy"
+              tabindex="-1"
+              aria-hidden="true"></iframe>`
+          : `<div class="score-preview-empty">No sheet preview</div>`
+        }
+      </div>
+      <div class="score-card-meta">
         <h3>${formatName(name)}</h3>
         <small>${name}</small>
       </div>
-      <button class="delete-btn" onclick="deleteScore(event, '${name}')" title="Remove">✕</button>
     </div>
   `).join('');
+  document.querySelectorAll('.score-preview-frame').forEach((frame) => {
+    frame.addEventListener('load', () => sanitizeSheetFrame(frame), { once: true });
+    sanitizeSheetFrame(frame);
+  });
+  requestAnimationFrame(() => resizeScorePreviews());
 }
 
 function formatName(name) {
@@ -506,7 +630,10 @@ async function openScore(name) {
   const frame = document.getElementById('sheet-frame');
   const placeholder = document.getElementById('sheet-placeholder');
   if (data.has_sheet) {
-    frame.onload = () => initializeSheetHighlighting();
+    frame.onload = () => {
+      sanitizeSheetFrame(frame);
+      initializeSheetHighlighting();
+    };
     frame.src = `/api/scores/${name}/sheet?v=${encodeURIComponent(data._mtime ?? Date.now())}`;
     frame.style.display = 'block';
     placeholder.style.display = 'none';
@@ -651,6 +778,8 @@ function updateSheetHighlight(beat) {
   const measureEl = _sheetMeasureEls[idx];
   if (!measureEl) return;
   const doc = measureEl.ownerDocument;
+  const overlayRoot = doc.querySelector('svg.definition-scale g.page-margin') || measureEl.parentNode;
+  if (!overlayRoot) return;
 
   _sheetHighlightRect?.remove();
   const bbox = measureEl.getBBox();
@@ -1037,6 +1166,14 @@ function closeAddModal(e) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.getElementById('add-modal').style.display = 'none';
 });
+
+const savedScoreGridColumns = localStorage.getItem('accompy_score_grid_columns');
+if (savedScoreGridColumns) {
+  state.scoreGridColumns = normalizedScoreGridColumns(savedScoreGridColumns);
+}
+applyScoreGridColumns(state.scoreGridColumns);
+applyTheme(localStorage.getItem('accompy_theme') || 'dark');
+window.addEventListener('resize', resizeScorePreviews);
 
 function onSearchInput() {
   clearTimeout(_searchTimer);
