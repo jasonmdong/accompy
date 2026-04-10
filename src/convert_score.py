@@ -13,8 +13,10 @@ If the piece only has one part, the left hand will be empty.
 """
 
 import sys
+import os
+import re
 import argparse
-from music21 import converter, note, chord, stream
+from music21 import converter, note, chord
 
 
 def beat_to_float(beat) -> float:
@@ -25,34 +27,34 @@ def beat_to_float(beat) -> float:
     return float(beat)
 
 
-def extract_melody(part) -> list:
-    """Return [[midi_pitch, offset], ...] — top note of each chord, no rests."""
+def extract_events(part) -> list:
+    """Return [[midi_pitch|[midi_pitches], offset], ...] preserving chords."""
     notes = []
     for el in part.flatten().notesAndRests:
         if isinstance(el, note.Note):
             notes.append([el.pitch.midi, beat_to_float(el.offset)])
         elif isinstance(el, chord.Chord):
-            top = max(n.pitch.midi for n in el.notes)
-            notes.append([top, beat_to_float(el.offset)])
+            pitches = sorted(n.pitch.midi for n in el.notes)
+            notes.append([pitches, beat_to_float(el.offset)])
     notes.sort(key=lambda x: x[1])
     return notes
 
 
-def extract_accompaniment(part) -> list:
-    """Return [[pitches_list, offset], ...] — all notes/chords, no rests."""
-    events = []
-    for el in part.flatten().notesAndRests:
-        if isinstance(el, note.Note):
-            events.append([[el.pitch.midi], beat_to_float(el.offset)])
-        elif isinstance(el, chord.Chord):
-            events.append([sorted(n.pitch.midi for n in el.notes), beat_to_float(el.offset)])
-    events.sort(key=lambda x: x[1])
-    return events
+def slugify_score_name(raw: str) -> str:
+    name = os.path.splitext(os.path.basename(raw))[0]
+    name = re.sub(r'[^a-zA-Z0-9_]+', '_', name).strip('_').lower()
+    return name or "imported_score"
 
 
-def write_score_py(parts_data: list, out_path: str, title: str):
+def write_score_py(
+    parts_data: list,
+    out_path: str,
+    title: str,
+    source_ref: str | None = None,
+    measure_beats: list[float] | None = None,
+):
     """
-    parts_data: [{"name": str, "notes": [[pitch, beat], ...]}, ...]
+    parts_data: [{"name": str, "notes": [[pitch_or_pitches, beat], ...]}, ...]
     Writes PARTS, and also RIGHT_HAND/LEFT_HAND defaulting to part 0 / rest.
     """
     # Default RIGHT_HAND = part 0 melody, LEFT_HAND = all other parts merged
@@ -63,11 +65,13 @@ def write_score_py(parts_data: list, out_path: str, title: str):
     left.sort(key=lambda x: x[1])
 
     lines = [
-        f'# Auto-generated score: {title}',
+        f'# Auto-generated: {source_ref or title}',
+        f'# Title: {title}',
         f'# Beat positions are in quarter-note units from the start.',
         f'',
-        f'# All parts — each note is [midi_pitch, beat]',
+        f'# All parts — each note is [midi_pitch_or_chord, beat]',
         f'PARTS = {parts_data!r}',
+        f'MEASURE_BEATS = {(measure_beats or [])!r}',
         f'',
         f'# Defaults: part 0 = melody, remaining parts = accompaniment',
         f'RIGHT_HAND = PARTS[0]["notes"] if PARTS else []',
@@ -83,6 +87,62 @@ def write_score_py(parts_data: list, out_path: str, title: str):
     print(f"Written to {out_path}")
     for p in parts_data:
         print(f"  {p['name']}: {len(p['notes'])} notes")
+
+
+def build_parts_data(score) -> list:
+    score_parts = score.parts
+    if len(score_parts) == 0:
+        raise ValueError("No parts found — is this a valid MusicXML file?")
+
+    parts_data = []
+    for p in score_parts:
+        part_name = p.partName or f"Part {len(parts_data) + 1}"
+        instrument = _detect_instrument(p)
+        notes = extract_events(p)
+        parts_data.append({"name": part_name, "instrument": instrument, "notes": notes})
+    return parts_data
+
+
+def extract_measure_beats(score) -> list[float]:
+    first_part = score.parts[0] if score.parts else score
+    return [float(m.offset) for m in first_part.getElementsByClass('Measure')]
+
+
+def convert_score_source(source: str, *, name: str | None = None, out_dir: str = "scores"):
+    if source.startswith("corpus:"):
+        from music21 import corpus as m21corpus
+        corpus_path = source[len("corpus:"):]
+        mxl_path = str(m21corpus.getWork(corpus_path))
+        score = m21corpus.parse(corpus_path)
+        title_fallback = source
+    else:
+        mxl_path = source
+        score = converter.parse(source)
+        title_fallback = source
+
+    parts_data = build_parts_data(score)
+    measure_beats = extract_measure_beats(score)
+    title = score.metadata.title if score.metadata and score.metadata.title else title_fallback
+    score_name = slugify_score_name(name or title_fallback)
+    out_py = os.path.join(out_dir, f"{score_name}.py")
+    out_html = os.path.join(out_dir, f"{score_name}.html")
+
+    write_score_py(parts_data, out_py, title, source_ref=source, measure_beats=measure_beats)
+    render_html(mxl_path, out_html, title)
+
+    total_notes = sum(len(p["notes"]) for p in parts_data)
+    return {
+        "name": score_name,
+        "title": title,
+        "parts": parts_data,
+        "parts_count": len(parts_data),
+        "total_notes": total_notes,
+        "out_py": out_py,
+        "out_html": out_html,
+        "has_sheet": os.path.exists(out_html),
+        "source_ref": source,
+        "measure_beats": measure_beats,
+    }
 
 
 def _detect_instrument(part) -> str:
@@ -141,49 +201,18 @@ def main():
     args = parser.parse_args()
 
     print(f"Parsing {args.input} ...")
-    if args.input.startswith("corpus:"):
-        from music21 import corpus as m21corpus
-        corpus_path = args.input[len("corpus:"):]
-        mxl_path = str(m21corpus.getWork(corpus_path))
-        score = m21corpus.parse(corpus_path)
-    else:
-        mxl_path = args.input
-        score = converter.parse(args.input)
-
-    score_parts = score.parts
-    print(f"Found {len(score_parts)} part(s):")
-    for i, p in enumerate(score_parts):
-        print(f"  [{i}] {p.partName or '(unnamed)'}")
-
-    if len(score_parts) == 0:
-        print("No parts found — is this a valid MusicXML file?")
+    out_dir = "scores"
+    out_name = args.name
+    if args.out:
+        out_dir = os.path.dirname(args.out) or "."
+        out_name = os.path.splitext(os.path.basename(args.out))[0]
+    try:
+        result = convert_score_source(args.input, name=out_name, out_dir=out_dir)
+    except Exception as exc:
+        print(str(exc))
         sys.exit(1)
 
-    parts_data = []
-    for p in score_parts:
-        part_name  = p.partName or f"Part {len(parts_data) + 1}"
-        instrument = _detect_instrument(p)
-        notes      = extract_melody(p)
-        parts_data.append({"name": part_name, "instrument": instrument, "notes": notes})
-
-    title = score.metadata.title if score.metadata and score.metadata.title else args.input
-
-    if args.out:
-        out_path = args.out
-    else:
-        import re, os
-        raw = args.name if args.name else args.input
-        name = os.path.splitext(os.path.basename(raw))[0]
-        name = re.sub(r'[^a-zA-Z0-9_]+', '_', name).strip('_').lower()
-        out_path = os.path.join("scores", f"{name}.py")
-
-    write_score_py(parts_data, out_path, title)
-
-    score_name = os.path.splitext(os.path.basename(out_path))[0]
-    print(f"\nPlay it with:  python main.py --score {score_name}")
-
-    # Render sheet music to HTML (open in browser → print to PDF)
-    render_html(mxl_path, os.path.join("scores", f"{score_name}.html"), title)
+    print(f"\nPlay it with:  python main.py --score {result['name']}")
 
 
 def render_html(mxl_path: str, out_path: str, title: str):

@@ -11,6 +11,20 @@ const SIMPLE_KEY_LAYOUT = {
 };
 const SHARPABLE_CODES = new Set(['KeyA', 'KeyS', 'KeyJ', 'KeyK', 'KeyL']);
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const VISUAL_SLOTS = [
+  { id: 'KeyA-natural', code: 'KeyA', sharp: false, noteName: 'C', keyLabel: 'a', kind: 'white', pitchClass: 0 },
+  { id: 'KeyA-sharp',   code: 'KeyA', sharp: true,  noteName: 'C#', keyLabel: '⇧a', kind: 'black', pitchClass: 1 },
+  { id: 'KeyS-natural', code: 'KeyS', sharp: false, noteName: 'D', keyLabel: 's', kind: 'white', pitchClass: 2 },
+  { id: 'KeyS-sharp',   code: 'KeyS', sharp: true,  noteName: 'D#', keyLabel: '⇧s', kind: 'black', pitchClass: 3 },
+  { id: 'KeyD-natural', code: 'KeyD', sharp: false, noteName: 'E', keyLabel: 'd', kind: 'white', pitchClass: 4 },
+  { id: 'KeyJ-natural', code: 'KeyJ', sharp: false, noteName: 'F', keyLabel: 'j', kind: 'white', pitchClass: 5 },
+  { id: 'KeyJ-sharp',   code: 'KeyJ', sharp: true,  noteName: 'F#', keyLabel: '⇧j', kind: 'black', pitchClass: 6 },
+  { id: 'KeyK-natural', code: 'KeyK', sharp: false, noteName: 'G', keyLabel: 'k', kind: 'white', pitchClass: 7 },
+  { id: 'KeyK-sharp',   code: 'KeyK', sharp: true,  noteName: 'G#', keyLabel: '⇧k', kind: 'black', pitchClass: 8 },
+  { id: 'KeyL-natural', code: 'KeyL', sharp: false, noteName: 'A', keyLabel: 'l', kind: 'white', pitchClass: 9 },
+  { id: 'KeyL-sharp',   code: 'KeyL', sharp: true,  noteName: 'A#', keyLabel: '⇧l', kind: 'black', pitchClass: 10 },
+  { id: 'Semicolon-natural', code: 'Semicolon', sharp: false, noteName: 'B', keyLabel: ';', kind: 'white', pitchClass: 11 },
+];
 function pitchName(midi) { return NOTE_NAMES[midi % 12] + (Math.floor(midi/12)-1); }
 
 const INSTRUMENTS = ['piano','violin','viola','cello','strings','flute','clarinet','oboe','voice'];
@@ -18,9 +32,14 @@ const INSTRUMENT_EMOJI = {
   piano:'🎹', violin:'🎻', viola:'🎻', cello:'🎻', strings:'🎻',
   flute:'🪈', clarinet:'🎷', oboe:'🎷', voice:'🎤',
 };
+const TEMPO_PAUSE_IGNORE_SEC = 3;
+let _accompanimentLatencyCompSec = 0.28;
 
 // ── Playback engines ────────────────────────────────────────────────────────
 let _audioCtx = null;
+let _midiConnected = false;
+let _lastMidiNoteTime = 0;
+let _lastMidiPitch = null;
 function audioCtx() {
   if (!_audioCtx) _audioCtx = new AudioContext({ latencyHint: 'interactive' });
   return _audioCtx;
@@ -213,6 +232,12 @@ async function ensureSamplePlayback(instruments = []) {
     .filter(ins => SAMPLE_LIBRARY[ins]))];
   if (!requested.length || typeof Tone === 'undefined') return false;
 
+  const toneContext = Tone.getContext?.();
+  if (toneContext) {
+    if ('lookAhead' in toneContext) toneContext.lookAhead = 0.01;
+    if ('updateInterval' in toneContext) toneContext.updateInterval = 0.01;
+  }
+
   if (!_toneReady) {
     await Tone.start();
     _toneReady = true;
@@ -293,10 +318,10 @@ function playSynthNote(midi, velocity = 0.6, instrument = 'piano') {
   }
 }
 
-function playNote(midi, velocity = 0.6, instrument = 'piano') {
+function playNote(midi, velocity = 0.6, instrument = 'piano', opts = {}) {
   const sampledInstrument = SAMPLE_ALIAS[instrument] || instrument;
   const sampler = _sampleSamplers[sampledInstrument];
-  if (sampler) {
+  if (sampler && !opts.preferSynth) {
     const baseDuration = SAMPLE_LIBRARY[sampledInstrument]?.noteDuration ?? 0.45;
     const duration = noteDurationSeconds(instrument, baseDuration);
     sampler.triggerAttackRelease(midiToToneNote(midi), duration, undefined, Math.min(1, velocity));
@@ -305,8 +330,24 @@ function playNote(midi, velocity = 0.6, instrument = 'piano') {
   playSynthNote(midi, velocity, instrument);
 }
 
-function playChord(pitches, velocity = 0.5, instrument = 'piano') {
-  pitches.forEach(p => playNote(p, velocity / pitches.length + 0.3, instrument));
+function playChord(pitches, velocity = 0.5, instrument = 'piano', opts = {}) {
+  pitches.forEach(p => playNote(p, velocity / pitches.length + 0.3, instrument, opts));
+}
+
+function eventPitches(event) {
+  if (!event) return [];
+  return Array.isArray(event[0]) ? event[0] : [event[0]];
+}
+
+function leadPitchFromEvent(event) {
+  const pitches = eventPitches(event);
+  return pitches.length ? pitches[pitches.length - 1] : 60;
+}
+
+function eventLabel(event) {
+  const pitches = eventPitches(event);
+  if (!pitches.length) return '—';
+  return pitches.map((pitch) => pitchName(pitch)).join(' / ');
 }
 
 // ── Tracker ──────────────────────────────────────────────────────────────────
@@ -316,39 +357,80 @@ class Tracker {
     this.position   = 0;
     this.timestamps = [];              // [{time, beat}, ...]
     this._defaultBps = initialBps;
+    this._smoothedBps = initialBps;
+    this._lastAdvanceTime = 0;
+    this._pendingChord = new Set();
+    this._pendingPosition = -1;
+    this._pendingStartedAt = 0;
   }
 
   onNote(pitch) {
     const expected = this.score[this.position];
     if (!expected) return null;
-    return expected[0] === pitch ? this._advance(this.position) : null;
+    const pitches = eventPitches(expected);
+    if (pitches.length === 1) {
+      return pitches[0] === pitch ? this._advance(this.position) : null;
+    }
+
+    if (!pitches.includes(pitch)) return null;
+    const now = performance.now() / 1000;
+    if (this._pendingPosition !== this.position || now - this._pendingStartedAt > 0.4) {
+      this._pendingChord.clear();
+      this._pendingPosition = this.position;
+      this._pendingStartedAt = now;
+    }
+    this._pendingChord.add(pitch);
+    return pitches.every((expectedPitch) => this._pendingChord.has(expectedPitch))
+      ? this._advance(this.position)
+      : null;
   }
 
   // Mic mode: accept only the current note, with a small pitch tolerance.
   onNoteFuzzy(midi) {
     const expected = this.score[this.position];
     if (!expected) return null;
-    return Math.abs(expected[0] - midi) <= 1 ? this._advance(this.position) : null;
+    return Math.abs(leadPitchFromEvent(expected) - midi) <= 1 ? this._advance(this.position) : null;
   }
 
   _advance(i) {
+    const now = performance.now() / 1000;
+    if (now - this._lastAdvanceTime < 0.06) return null;
+    this._lastAdvanceTime = now;
+    this._pendingChord.clear();
+    this._pendingPosition = -1;
+    this._pendingStartedAt = 0;
     this.position = i + 1;
     const beat = this.score[i][1];
-    this.timestamps.push({ time: performance.now() / 1000, beat });
+    this.timestamps.push({ time: now, beat });
     if (this.timestamps.length > 5) this.timestamps.shift();
     return beat;
   }
 
   bps() {
     const ts = this.timestamps;
-    if (ts.length < 2) return this._defaultBps;
+    if (ts.length < 2) return this._smoothedBps;
     const rates = [];
     for (let i = 1; i < ts.length; i++) {
       const dt = ts[i].time - ts[i-1].time;
       const db = ts[i].beat - ts[i-1].beat;
-      if (dt > 0 && db > 0) rates.push(db / dt);
+      if (dt >= 0.08 && dt <= TEMPO_PAUSE_IGNORE_SEC && db > 0) rates.push(db / dt);
     }
-    return rates.length ? rates.reduce((a,b)=>a+b)/rates.length : this._defaultBps;
+    if (!rates.length) return this._smoothedBps;
+
+    rates.sort((a, b) => a - b);
+    let candidate = rates[Math.floor(rates.length / 2)];
+
+    const minBps = 35 / 60;
+    const maxBps = 300 / 60;
+    if (candidate > maxBps) return this._smoothedBps;
+    candidate = Math.max(minBps, Math.min(maxBps, candidate));
+
+    const maxRise = Math.min(maxBps, this._smoothedBps * 1.22 + 0.05);
+    const maxDrop = Math.max(minBps, this._smoothedBps * 0.78 - 0.03);
+    candidate = Math.max(maxDrop, Math.min(maxRise, candidate));
+
+    this._smoothedBps = this._smoothedBps * 0.72 + candidate * 0.28;
+    return this._smoothedBps;
   }
 
   isFinished() { return this.position >= this.score.length; }
@@ -386,10 +468,12 @@ class Accompanist {
   onRhNote(beat, bps) {
     this._bps      = bps;
     this._syncBeat = beat;
-    this._syncTime = performance.now() / 1000;
+    // Bias the accompaniment clock slightly ahead to compensate for browser
+    // output latency that is still audible even with wired MIDI input.
+    this._syncTime = performance.now() / 1000 - _accompanimentLatencyCompSec;
     this._nextSync = this.rhBeats.find(b => b > beat + 0.01) ?? Infinity;
     // Skip LH events now in the past
-    while (this._lhIdx < this.events.length && this.events[this._lhIdx][1] < beat - 0.05)
+    while (this._lhIdx < this.events.length && this.events[this._lhIdx][1] < beat - 0.08)
       this._lhIdx++;
   }
 
@@ -409,7 +493,7 @@ class Accompanist {
         const current = this._currentBeat();
         if (current >= beat - 0.005) {
           const instr = this._instruments[0] || 'piano';
-          playChord(pitches, 0.5, instr);
+          playChord(pitches, 0.5, instr, { preferSynth: _midiConnected });
           this._lhIdx++;
         }
       }
@@ -431,13 +515,19 @@ let state = {
   scoreGridColumns: 3,
 };
 
+let _noteHighwayRaf = null;
+let _noteHighwayStartTime = null;
+let _noteHighwayStartBeat = 0;
+let _noteHighwayBps = 1;
+
 let _sheetMeasureEls = [];
 let _sheetHighlightRect = null;
 let _sheetHighlightIndex = -1;
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 async function api(path, opts) {
-  const r = await fetch(path, opts);
+  const request = { cache: 'no-store', ...(opts || {}) };
+  const r = await fetch(path, request);
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -467,6 +557,25 @@ function setScoreGridColumns(value) {
   const columns = normalizedScoreGridColumns(value);
   applyScoreGridColumns(columns);
   localStorage.setItem('accompy_score_grid_columns', String(columns));
+}
+
+function setLatencyCompensation(value) {
+  const ms = Math.max(0, Math.min(500, Number.parseInt(value, 10) || 0));
+  _accompanimentLatencyCompSec = ms / 1000;
+  const slider = document.getElementById('latency-slider');
+  const label = document.getElementById('latency-value');
+  if (slider && slider.value !== String(ms)) slider.value = String(ms);
+  if (label) label.textContent = `${ms} ms`;
+  localStorage.setItem('accompy_latency_comp_ms', String(ms));
+}
+
+function initLatencyControls() {
+  const slider = document.getElementById('latency-slider');
+  if (!slider || slider.dataset.bound === '1') return;
+  const sync = () => setLatencyCompensation(slider.value);
+  slider.addEventListener('input', sync);
+  slider.addEventListener('change', sync);
+  slider.dataset.bound = '1';
 }
 
 function applyTheme(theme) {
@@ -670,6 +779,7 @@ async function openScore(name) {
 
   buildKeyboard(getRightHand());
   updateNextKey(getRightHand(), 0);
+  renderNoteHighway();
   showScreen('play-screen');
   document.getElementById('start-btn').disabled = false;
   document.getElementById('stop-btn').disabled  = true;
@@ -681,6 +791,7 @@ function selectPart(idx) {
     b.classList.toggle('selected', i === idx));
   buildKeyboard(getRightHand());
   updateNextKey(getRightHand(), 0);
+  renderNoteHighway();
 }
 
 function getInstrumentForPart(idx) {
@@ -715,8 +826,7 @@ function getLeftHand() {
   const left = [];
   parts.forEach((p, i) => { if (i !== idx) left.push(...p.notes); });
   left.sort((a, b) => a[1] - b[1]);
-  // Wrap pitches as arrays for the accompanist
-  return left.map(n => [Array.isArray(n[0]) ? n[0] : [n[0]], n[1]]);
+  return left.map((event) => [eventPitches(event), event[1]]);
 }
 
 function initializeSheetHighlighting() {
@@ -800,7 +910,7 @@ function updateSheetHighlight(beat) {
 function expectedKeyboardPitch() {
   const rightHand = getRightHand();
   const position = state.tracker?.position ?? 0;
-  return rightHand[position]?.[0] ?? rightHand[0]?.[0] ?? 60;
+  return leadPitchFromEvent(rightHand[position] ?? rightHand[0]) ?? 60;
 }
 
 function resolveTypedMidi(code, shifted = false) {
@@ -818,38 +928,126 @@ function resolveTypedMidi(code, shifted = false) {
 }
 
 function cueKeyIdForMidi(midi) {
-  const pitchClass = midi % 12;
-  for (const code of SIMPLE_KEY_ORDER) {
-    const layout = SIMPLE_KEY_LAYOUT[code];
-    if (layout.natural === pitchClass) return `kbkey-${code}`;
-    if (SHARPABLE_CODES.has(code) && (layout.natural + 1) % 12 === pitchClass) return `kbsharp-${code}`;
+  const slot = VISUAL_SLOTS.find((entry) => entry.pitchClass === (midi % 12));
+  return slot ? `kbslot-${slot.id}` : null;
+}
+
+function laneCodeForMidi(midi) {
+  return VISUAL_SLOTS.find((entry) => entry.pitchClass === (midi % 12)) || null;
+}
+
+function currentGuideBeat(rightHand) {
+  if (!rightHand.length) return 0;
+  const trackerPos = state.tracker?.position ?? 0;
+  const expectedBeat = rightHand[trackerPos]?.[1]
+    ?? rightHand[rightHand.length - 1]?.[1]
+    ?? 0;
+
+  const last = state.tracker?.timestamps?.[state.tracker.timestamps.length - 1];
+  const anchorBeat = last?.beat ?? _noteHighwayStartBeat ?? 0;
+  const anchorTime = last?.time ?? _noteHighwayStartTime;
+  const bps = state.tracker?.bps?.() ?? _noteHighwayBps ?? 1;
+  if (!anchorTime) return Math.min(anchorBeat, expectedBeat);
+
+  const estimated = anchorBeat + Math.max(0, performance.now() / 1000 - anchorTime) * bps;
+  return Math.min(estimated, expectedBeat);
+}
+
+function ensureNoteHighway() {
+  const root = document.getElementById('note-highway');
+  if (!root || root.dataset.ready === '1') return;
+  root.innerHTML = VISUAL_SLOTS.map((slot) => {
+    return `<div class="note-lane ${slot.kind}" data-lane="${slot.id}">
+      <div class="note-lane-label">${slot.noteName}</div>
+      <div class="note-hit-line"></div>
+    </div>`;
+  }).join('');
+  root.dataset.ready = '1';
+}
+
+function renderNoteHighway() {
+  ensureNoteHighway();
+  const root = document.getElementById('note-highway');
+  if (!root) return;
+
+  root.querySelectorAll('.note-bar').forEach((el) => el.remove());
+
+  const rightHand = getRightHand();
+  if (!rightHand.length) return;
+
+  const trackerPos = state.tracker?.position ?? 0;
+  const currentBeat = currentGuideBeat(rightHand);
+  const lookBehind = 0.5;
+  const lookAhead = 4;
+  const laneHeight = 210;
+  const topPadding = 12;
+  const hitLineTop = laneHeight - 34;
+  const pixelsPerBeat = (hitLineTop - topPadding) / (lookAhead + lookBehind);
+  const startIndex = Math.max(0, trackerPos - 1);
+
+  for (let i = startIndex; i < rightHand.length; i++) {
+    const event = rightHand[i];
+    const beat = event?.[1];
+    const pitches = eventPitches(event);
+    const delta = beat - currentBeat;
+    if (delta < -lookBehind) continue;
+    if (delta > lookAhead) break;
+
+    const t = (delta + lookBehind) / (lookAhead + lookBehind);
+    const top = Math.max(topPadding, (1 - t) * (hitLineTop - topPadding) + topPadding);
+    const nextBeat = rightHand[i + 1]?.[1] ?? (beat + 0.75);
+    const sustainBeats = Math.max(0.25, nextBeat - beat);
+    const visualBeats = sustainBeats * 1.18 + 0.12;
+    const barHeight = Math.max(24, Math.min(hitLineTop - top + 24, visualBeats * pixelsPerBeat));
+    pitches.forEach((midi) => {
+      const lane = laneCodeForMidi(midi);
+      if (!lane) return;
+      const laneEl = root.querySelector(`[data-lane="${lane.id}"]`);
+      if (!laneEl) return;
+      const bar = document.createElement('div');
+      bar.className = `note-bar${lane.sharp ? ' sharp' : ''}${i === trackerPos ? ' current' : ''}`;
+      bar.style.top = `${Math.min(hitLineTop, top)}px`;
+      bar.style.height = `${i === trackerPos ? Math.max(24, barHeight) : barHeight}px`;
+      laneEl.appendChild(bar);
+    });
   }
-  return null;
+}
+
+function stopNoteHighwayLoop() {
+  if (_noteHighwayRaf) cancelAnimationFrame(_noteHighwayRaf);
+  _noteHighwayRaf = null;
+}
+
+function startNoteHighwayLoop() {
+  stopNoteHighwayLoop();
+  const tick = () => {
+    renderNoteHighway();
+    if (state.playing) _noteHighwayRaf = requestAnimationFrame(tick);
+  };
+  tick();
 }
 
 function buildKeyboard(rightHand) {
-  const nextPitch = rightHand[0]?.[0];
+  const nextPitches = eventPitches(rightHand[0]);
 
   const row = document.getElementById('kb-row-main');
-  row.innerHTML = SIMPLE_KEY_ORDER.map(code => {
-    const layout = SIMPLE_KEY_LAYOUT[code];
-    const sharpPitchClass = (layout.natural + 1) % 12;
-    const naturalIsNext = nextPitch % 12 === layout.natural;
-    const sharpIsNext = SHARPABLE_CODES.has(code) && nextPitch % 12 === sharpPitchClass;
-
-    const sharpBadge = SHARPABLE_CODES.has(code)
-      ? `<div class="kb-sharp${sharpIsNext ? ' next' : ''}" id="kbsharp-${code}">
-           <span class="sharp-char">⇧${layout.label}</span>
-           <span class="sharp-note">${NOTE_NAMES[sharpPitchClass]}</span>
-         </div>`
-      : `<div class="kb-sharp-empty"></div>`;
+  row.innerHTML = SIMPLE_KEY_ORDER.map((code) => {
+    const naturalSlot = VISUAL_SLOTS.find((slot) => slot.code === code && !slot.sharp);
+    const sharpSlot = VISUAL_SLOTS.find((slot) => slot.code === code && slot.sharp);
+    const naturalIsNext = naturalSlot && nextPitches.some((pitch) => pitch % 12 === naturalSlot.pitchClass);
+    const sharpIsNext = sharpSlot && nextPitches.some((pitch) => pitch % 12 === sharpSlot.pitchClass);
 
     return `<div class="kb-key-wrap">
-      ${sharpBadge}
-      <div class="kb-key${naturalIsNext ? ' next' : ''}" id="kbkey-${code}">
-        <span class="key-char">${layout.label}</span>
-        <span class="note-name">${layout.naturalName}</span>
+      <div class="kb-key kb-key-white${naturalIsNext ? ' next' : ''}" id="kbslot-${naturalSlot.id}">
+        <span class="key-char">${naturalSlot.keyLabel}</span>
+        <span class="note-name">${naturalSlot.noteName}</span>
       </div>
+      ${sharpSlot ? `
+        <div class="kb-key kb-key-black${sharpIsNext ? ' next' : ''}" id="kbslot-${sharpSlot.id}">
+          <span class="key-char">${sharpSlot.keyLabel}</span>
+          <span class="note-name">${sharpSlot.noteName}</span>
+        </div>
+      ` : ''}
     </div>`;
   }).join('');
 }
@@ -862,12 +1060,18 @@ function highlightKey(key, on) {
 function updateNextKey(rightHand, position) {
   document.querySelectorAll('.kb-key.next, .kb-sharp.next')
     .forEach(el => el.classList.remove('next'));
-  if (position >= rightHand.length) return;
+  if (position >= rightHand.length) {
+    renderNoteHighway();
+    return;
+  }
 
-  const midi = rightHand[position][0];
-  const keyId = cueKeyIdForMidi(midi);
-  if (keyId) document.getElementById(keyId)?.classList.add('next');
-  document.getElementById('next-note-display').textContent = pitchName(midi);
+  const event = rightHand[position];
+  eventPitches(event).forEach((midi) => {
+    const keyId = cueKeyIdForMidi(midi);
+    if (keyId) document.getElementById(keyId)?.classList.add('next');
+  });
+  document.getElementById('next-note-display').textContent = eventLabel(event);
+  renderNoteHighway();
 }
 
 // ── Start / Stop ──────────────────────────────────────────────────────────────
@@ -903,12 +1107,16 @@ async function startPlaying() {
   state.accompanist = new Accompanist(left, right, initialBps, leftInstruments);
   state.accompanist.start();
   state.playing = true;
+  _noteHighwayStartTime = performance.now() / 1000;
+  _noteHighwayStartBeat = 0;
+  _noteHighwayBps = initialBps;
 
   document.getElementById('start-btn').disabled = true;
   document.getElementById('stop-btn').disabled  = false;
 
   updateNextKey(right, 0);
   updateSheetHighlight(0);
+  startNoteHighwayLoop();
   enableMidi();
   if (_inputMode === 'mic') _startMic();
 }
@@ -916,10 +1124,13 @@ async function startPlaying() {
 function stopPlaying() {
   if (state.accompanist) state.accompanist.stop();
   _stopMic();
+  stopNoteHighwayLoop();
   state.playing = false;
+  _noteHighwayStartTime = null;
   document.getElementById('start-btn').disabled = false;
   document.getElementById('stop-btn').disabled  = true;
   document.getElementById('next-note-display').textContent = '—';
+  renderNoteHighway();
 }
 
 // ── Note handler (called by keyboard and MIDI) ────────────────────────────────
@@ -928,6 +1139,9 @@ function handleNoteMic(midi) {
   const beat = state.tracker.onNoteFuzzy(midi);
   if (beat !== null) {
     const bps = state.tracker.bps();
+    _noteHighwayStartBeat = beat;
+    _noteHighwayStartTime = performance.now() / 1000;
+    _noteHighwayBps = bps;
     state.accompanist.onRhNote(beat, bps);
     updateSheetHighlight(beat);
     document.getElementById('beat-val').textContent  = beat.toFixed(1);
@@ -949,6 +1163,37 @@ function handleNote(midi) {
   const beat = state.tracker.onNote(midi);
   if (beat !== null) {
     const bps = state.tracker.bps();
+    _noteHighwayStartBeat = beat;
+    _noteHighwayStartTime = performance.now() / 1000;
+    _noteHighwayBps = bps;
+    state.accompanist.onRhNote(beat, bps);
+    updateSheetHighlight(beat);
+    document.getElementById('beat-val').textContent  = beat.toFixed(1);
+    document.getElementById('tempo-val').textContent = Math.round(bps * 60) + ' BPM';
+    document.getElementById('progress-fill').style.width =
+      (state.tracker.progress() * 100).toFixed(1) + '%';
+    updateNextKey(getRightHand(), state.tracker.position);
+  }
+
+  if (state.tracker.isFinished()) stopPlaying();
+}
+
+function handleMidiNote(midi) {
+  if (!state.playing || !state.tracker) return;
+  const now = performance.now();
+  if (_lastMidiPitch === midi && now - _lastMidiNoteTime < 70) return;
+  _lastMidiPitch = midi;
+  _lastMidiNoteTime = now;
+  const keyId = cueKeyIdForMidi(midi);
+  highlightKey(keyId, true);
+  setTimeout(() => highlightKey(keyId, false), 120);
+
+  const beat = state.tracker.onNote(midi);
+  if (beat !== null) {
+    const bps = state.tracker.bps();
+    _noteHighwayStartBeat = beat;
+    _noteHighwayStartTime = performance.now() / 1000;
+    _noteHighwayBps = bps;
     state.accompanist.onRhNote(beat, bps);
     updateSheetHighlight(beat);
     document.getElementById('beat-val').textContent  = beat.toFixed(1);
@@ -1127,10 +1372,11 @@ document.addEventListener('keydown', e => {
 function enableMidi() {
   if (!navigator.requestMIDIAccess) return;
   navigator.requestMIDIAccess().then(access => {
+    _midiConnected = access.inputs.size > 0;
     for (const input of access.inputs.values()) {
       input.onmidimessage = ({ data }) => {
         const [status, pitch, velocity] = data;
-        if ((status & 0xF0) === 0x90 && velocity > 0) handleNote(pitch);
+        if ((status & 0xF0) === 0x90 && velocity > 0) handleMidiNote(pitch);
       };
     }
     document.getElementById('midi-status').textContent = 'MIDI: connected';
@@ -1153,6 +1399,9 @@ let _searchTimer = null;
 function openAddModal() {
   document.getElementById('add-modal').style.display = 'flex';
   document.getElementById('corpus-search').value = '';
+  document.getElementById('import-name').value = '';
+  document.getElementById('import-files').value = '';
+  setImportStatus('No files selected.');
   document.getElementById('search-results').innerHTML =
     '<p class="search-hint">Type to search the built-in music library (535 pieces).</p>';
   setTimeout(() => document.getElementById('corpus-search').focus(), 50);
@@ -1178,6 +1427,17 @@ window.addEventListener('resize', resizeScorePreviews);
 function onSearchInput() {
   clearTimeout(_searchTimer);
   _searchTimer = setTimeout(runSearch, 300);
+}
+
+function setImportStatus(message, tone = 'muted') {
+  const status = document.getElementById('import-status');
+  if (!status) return;
+  status.textContent = message;
+  status.style.color = tone === 'error'
+    ? '#e05c5c'
+    : tone === 'success'
+      ? 'var(--success)'
+      : 'var(--muted)';
 }
 
 async function runSearch() {
@@ -1245,5 +1505,66 @@ async function addPiece(corpusPath, safeName) {
   }
 }
 
+async function importScoreFiles() {
+  const fileInput = document.getElementById('import-files');
+  const nameInput = document.getElementById('import-name');
+  const button = document.getElementById('import-btn');
+  const files = [...(fileInput?.files || [])];
+
+  if (!files.length) {
+    setImportStatus('Choose a PDF or one/more page images first.', 'error');
+    return;
+  }
+
+  const form = new FormData();
+  files.forEach((file) => form.append('files', file));
+  form.append('name', (nameInput?.value || '').trim());
+
+  button.disabled = true;
+  setImportStatus('Running Audiveris and converting the score…');
+
+  try {
+    const response = await fetch('/api/import', { method: 'POST', body: form });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.detail || 'Import failed');
+    }
+    setImportStatus(`Imported ${formatName(payload.name)}.`, 'success');
+    await loadScoreList();
+    setTimeout(() => closeAddModal(), 350);
+  } catch (error) {
+    setImportStatus(error.message || 'Import failed.', 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function initImportControls() {
+  const importFiles = document.getElementById('import-files');
+  const importBtn = document.getElementById('import-btn');
+
+  importFiles?.addEventListener('change', (event) => {
+    const files = [...(event.target.files || [])];
+    if (!files.length) {
+      setImportStatus('No files selected.');
+      return;
+    }
+    const label = files.length === 1
+      ? files[0].name
+      : `${files.length} files selected`;
+    setImportStatus(label);
+  });
+
+  importBtn?.addEventListener('click', (event) => {
+    event.preventDefault();
+    importScoreFiles();
+  });
+}
+
+window.importScoreFiles = importScoreFiles;
+
 // ── Init ──────────────────────────────────────────────────────────────────────
+initLatencyControls();
+initImportControls();
+setLatencyCompensation(localStorage.getItem('accompy_latency_comp_ms') || '280');
 loadScoreList();

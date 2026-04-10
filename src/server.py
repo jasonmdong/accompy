@@ -12,12 +12,16 @@ Endpoints:
 
 import os
 import re
+import tempfile
+import subprocess
 import importlib.util
+from pathlib import Path
 from functools import lru_cache
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from src.convert_score import convert_score_source, slugify_score_name
 
 app = FastAPI()
 
@@ -42,6 +46,8 @@ def _corpus_index():
     return entries
 
 SCORES_DIR = "scores"
+ALLOWED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
+ALLOWED_PDF_SUFFIXES = {".pdf"}
 
 # In-memory score cache: name → (mtime, module)
 # Invalidated automatically when the .py file changes on disk.
@@ -67,6 +73,13 @@ def load_score_module(name: str):
 
 
 def load_measure_beats(name: str) -> list[float]:
+    try:
+        mod = load_score_module(name)
+        if hasattr(mod, "MEASURE_BEATS"):
+            return list(mod.MEASURE_BEATS)
+    except HTTPException:
+        return []
+
     path = os.path.join(SCORES_DIR, f"{name}.py")
     if not os.path.exists(path):
         return []
@@ -111,6 +124,100 @@ def load_measure_beats(name: str) -> list[float]:
 
     _measure_cache[name] = (mtime, measure_beats)
     return measure_beats
+
+
+def invalidate_score_cache(name: str):
+    _score_cache.pop(name, None)
+    _measure_cache.pop(name, None)
+
+
+def score_name_from_input(raw: str) -> str:
+    return slugify_score_name(raw)
+
+
+async def save_uploaded_file(upload: UploadFile, directory: Path, index: int) -> Path:
+    suffix = Path(upload.filename or "").suffix.lower()
+    stem = score_name_from_input(Path(upload.filename or f"upload_{index}").stem)
+    dest = directory / f"{index:02d}_{stem}{suffix}"
+    data = await upload.read()
+    dest.write_bytes(data)
+    await upload.close()
+    return dest
+
+
+def combine_images_to_pdf(image_paths: list[Path], out_path: Path) -> Path:
+    import fitz
+
+    doc = fitz.open()
+    try:
+        for image_path in image_paths:
+            img = fitz.open(image_path)
+            try:
+                pdf_bytes = img.convert_to_pdf()
+            finally:
+                img.close()
+            img_pdf = fitz.open("pdf", pdf_bytes)
+            try:
+                doc.insert_pdf(img_pdf)
+            finally:
+                img_pdf.close()
+        doc.save(out_path)
+    finally:
+        doc.close()
+    return out_path
+
+
+def prepare_omr_input(upload_paths: list[Path], work_dir: Path) -> Path:
+    suffixes = {path.suffix.lower() for path in upload_paths}
+    if suffixes & ALLOWED_PDF_SUFFIXES:
+        if len(upload_paths) != 1 or not suffixes <= ALLOWED_PDF_SUFFIXES:
+            raise HTTPException(status_code=400, detail="Upload either one PDF or one/more image files, not both.")
+        return upload_paths[0]
+
+    if not suffixes or not suffixes <= ALLOWED_IMAGE_SUFFIXES:
+        raise HTTPException(status_code=400, detail="Supported uploads are PDF, PNG, JPG, and JPEG.")
+
+    return combine_images_to_pdf(upload_paths, work_dir / "input.pdf")
+
+
+def run_audiveris(input_path: Path, output_dir: Path):
+    audiveris_bin = os.getenv("AUDIVERIS_BIN", "audiveris")
+    command = [
+        audiveris_bin,
+        "-batch",
+        "-transcribe",
+        "-export",
+        "-output",
+        str(output_dir),
+        str(input_path),
+    ]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, check=True)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Audiveris is not installed or AUDIVERIS_BIN is not set.",
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        message = (exc.stderr or exc.stdout or "Audiveris failed").strip()
+        raise HTTPException(status_code=500, detail=f"Audiveris failed: {message}") from exc
+    return completed
+
+
+def find_musicxml_output(output_dir: Path) -> Path:
+    candidates = sorted(
+        [
+            *output_dir.rglob("*.mxl"),
+            *output_dir.rglob("*.musicxml"),
+            *output_dir.rglob("*.xml"),
+        ],
+        key=lambda path: (path.suffix.lower() != ".mxl", -path.stat().st_size, str(path)),
+    )
+    for candidate in candidates:
+        if candidate.name.lower().endswith("opus.xml"):
+            continue
+        return candidate
+    raise HTTPException(status_code=500, detail="Audiveris completed but no MusicXML output was found.")
 
 
 @app.get("/api/corpus/search")
@@ -267,78 +374,54 @@ class ConvertRequest(BaseModel):
 
 @app.post("/api/convert")
 def convert_score(req: ConvertRequest):
-    import re
-    from music21 import corpus as m21corpus
-    from music21 import converter, note, chord
-    from src.convert_score import _detect_instrument
-
-    name = re.sub(r"[^a-zA-Z0-9_]+", "_", req.name).strip("_").lower()
-    out_py   = os.path.join(SCORES_DIR, f"{name}.py")
-    out_html = os.path.join(SCORES_DIR, f"{name}.html")
-
     try:
-        mxl_path = str(m21corpus.getWork(req.corpus_path))
-        score    = m21corpus.parse(req.corpus_path)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        result = convert_score_source(f"corpus:{req.corpus_path}", name=score_name_from_input(req.name), out_dir=SCORES_DIR)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    score_parts = score.parts
-    if len(score_parts) < 1:
-        raise HTTPException(status_code=400, detail="No parts found in score")
+    invalidate_score_cache(result["name"])
+    return {
+        "name": result["name"],
+        "parts": result["parts_count"],
+        "total_notes": result["total_notes"],
+        "has_sheet": result["has_sheet"],
+    }
 
-    parts_data = []
-    for p in score_parts:
-        part_name  = p.partName or f"Part {len(parts_data) + 1}"
-        instrument = _detect_instrument(p)
-        notes = []
-        for el in p.flatten().notesAndRests:
-            if isinstance(el, note.Note):
-                notes.append([el.pitch.midi, float(el.offset)])
-            elif isinstance(el, chord.Chord):
-                top = max(n.pitch.midi for n in el.notes)
-                notes.append([top, float(el.offset)])
-        notes.sort(key=lambda x: x[1])
-        parts_data.append({"name": part_name, "instrument": instrument, "notes": notes})
 
-    # Write .py
-    lines = [
-        f'# Auto-generated: {req.corpus_path}',
-        f'PARTS = {parts_data!r}',
-        f'RIGHT_HAND = PARTS[0]["notes"] if PARTS else []',
-        f'LEFT_HAND  = []',
-        f'for _p in PARTS[1:]:',
-        f'    LEFT_HAND.extend([[n[0] if isinstance(n[0], list) else [n[0]], n[1]] for n in _p["notes"]])',
-        f'LEFT_HAND.sort(key=lambda x: x[1])',
-    ]
-    with open(out_py, "w") as f:
-        f.write("\n".join(lines) + "\n")
+@app.post("/api/import")
+async def import_score(
+    files: list[UploadFile] = File(...),
+    name: str = Form(""),
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded.")
 
-    # Bust the in-memory cache so the next GET picks up the new file
-    _score_cache.pop(name, None)
-    _measure_cache.pop(name, None)
+    score_name = score_name_from_input(name or Path(files[0].filename or "imported_score").stem)
 
-    # Write .html via verovio
-    try:
-        import verovio
-        tk = verovio.toolkit()
-        tk.setOptions({"pageWidth": 2100, "pageHeight": 2970,
-                       "spacingSystem": 12, "adjustPageHeight": 0, "footer": "none"})
-        tk.loadFile(mxl_path)
-        svgs = [tk.renderToSVG(i + 1) for i in range(tk.getPageCount())]
-        page_divs = "\n".join(f'<div class="page">{s}</div>' for s in svgs)
-        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>
-  body{{margin:0;background:#eee}} .page{{background:white;width:210mm;margin:1rem auto;box-shadow:0 2px 6px rgba(0,0,0,.3)}} .page svg{{width:100%;height:auto;display:block}}
-  @media print{{body{{background:white}} .page{{margin:0;box-shadow:none;width:100%}}}}
-</style></head><body>{page_divs}</body></html>"""
-        with open(out_html, "w") as f:
-            f.write(html)
-    except Exception:
-        pass
+    with tempfile.TemporaryDirectory(prefix="accompy_import_") as tmp_dir:
+        work_dir = Path(tmp_dir)
+        uploads_dir = work_dir / "uploads"
+        output_dir = work_dir / "audiveris"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    total_notes = sum(len(p["notes"]) for p in parts_data)
-    return {"name": name, "parts": len(parts_data), "total_notes": total_notes,
-            "has_sheet": os.path.exists(out_html)}
+        upload_paths = [await save_uploaded_file(upload, uploads_dir, idx) for idx, upload in enumerate(files)]
+        omr_input = prepare_omr_input(upload_paths, work_dir)
+        run_audiveris(omr_input, output_dir)
+        musicxml_path = find_musicxml_output(output_dir)
+
+        try:
+            result = convert_score_source(str(musicxml_path), name=score_name, out_dir=SCORES_DIR)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Could not convert Audiveris output: {exc}") from exc
+
+    invalidate_score_cache(result["name"])
+    return {
+        "name": result["name"],
+        "parts": result["parts_count"],
+        "total_notes": result["total_notes"],
+        "has_sheet": result["has_sheet"],
+    }
 
 
 # Serve static files and fallback to index.html

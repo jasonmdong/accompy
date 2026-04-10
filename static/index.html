@@ -42,12 +42,31 @@
       <button class="modal-close" onclick="closeAddModal()">✕</button>
     </div>
     <div class="modal-body">
+      <div class="modal-section">
+        <h4>Built-in library</h4>
+        <p class="modal-copy">Search the music21 corpus and add a score directly.</p>
+      </div>
       <div class="search-row">
         <input id="corpus-search" type="text" placeholder="Search by composer or piece…" oninput="onSearchInput()" autocomplete="off">
         <span id="search-spinner" style="display:none">⏳</span>
       </div>
       <div id="search-results" class="search-results">
         <p class="search-hint">Type to search the built-in music library (535 pieces).</p>
+      </div>
+
+      <div class="upload-divider"></div>
+
+      <div class="modal-section">
+        <h4>Import PDF or images</h4>
+        <p class="modal-copy">Upload one PDF or a set of page screenshots. Audiveris will convert them to MusicXML, then accompy will build the playable score.</p>
+      </div>
+      <div class="upload-form">
+        <input id="import-name" type="text" placeholder="Piece name (optional)">
+        <input id="import-files" type="file" accept=".pdf,.png,.jpg,.jpeg,image/png,image/jpeg,application/pdf" multiple>
+        <div class="upload-actions">
+          <button id="import-btn" type="button" class="btn btn-primary" onclick="importScoreFiles()">Import</button>
+          <span id="import-status" class="import-status">No files selected.</span>
+        </div>
       </div>
     </div>
   </div>
@@ -74,6 +93,12 @@
           <button id="stop-btn" class="btn btn-danger" onclick="stopPlaying()" disabled>■ Stop</button>
         </div>
       </div>
+      <div class="latency-row">
+        <label for="latency-slider">Latency compensation</label>
+        <input id="latency-slider" type="range" min="0" max="500" step="10" value="280"
+               oninput="setLatencyCompensation(this.value)">
+        <span id="latency-value">280 ms</span>
+      </div>
     </div>
   </div>
 
@@ -88,8 +113,11 @@
         <div class="help-tip-popup">A S D J K L ; play C D E F G A B. Hold Shift for sharps.</div>
       </div>
     </div>
-    <div class="kb-layout">
-      <div id="kb-row-main" class="kb-row"></div>
+    <div class="piano-stage">
+      <div id="note-highway" class="note-highway"></div>
+      <div class="kb-layout">
+        <div id="kb-row-main" class="kb-row"></div>
+      </div>
     </div>
   </div>
 
