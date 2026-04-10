@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from src.convert_score import convert_score_source, slugify_score_name
+from src.paths import get_scores_dir, get_static_dir
 
 app = FastAPI()
 
@@ -45,7 +46,8 @@ def _corpus_index():
         entries.append({'path': rel, 'composer': composer, 'title': title})
     return entries
 
-SCORES_DIR = "scores"
+SCORES_DIR = str(get_scores_dir())
+STATIC_DIR = str(get_static_dir())
 ALLOWED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 ALLOWED_PDF_SUFFIXES = {".pdf"}
 
@@ -425,4 +427,4 @@ async def import_score(
 
 
 # Serve static files and fallback to index.html
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

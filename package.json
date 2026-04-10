@@ -1,0 +1,66 @@
+{
+  "name": "accompy-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop shell for the accompy piano accompanist",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "desktop": "electron .",
+    "desktop:dev": "ELECTRON_ENABLE_LOGGING=1 electron .",
+    "desktop:backend": "./scripts/build_backend_mac.sh",
+    "desktop:dist": "electron-builder --mac dir",
+    "desktop:dmg": "electron-builder --mac dmg"
+  },
+  "build": {
+    "appId": "com.accompy.desktop",
+    "productName": "accompy",
+    "files": [
+      "electron/**/*",
+      "static/**/*",
+      "src/**/*",
+      "run.py",
+      "requirements.txt",
+      "scores/**/*",
+      "LICENSE",
+      "README.md",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "electron/assets"
+    },
+    "extraResources": [
+      {
+        "from": "dist/backend",
+        "to": "app-resources/backend",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "static",
+        "to": "app-resources/static",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "scores",
+        "to": "app-resources/starter-scores",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        "dir",
+        "dmg"
+      ]
+    }
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  }
+}

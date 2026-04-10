@@ -27,11 +27,12 @@ import rtmidi
 from .tracker import ScoreTracker
 from .accompanist import Accompanist
 from .synth import play_note as synth_play_note
+from .paths import get_scores_dir
 
 
 def load_score(name: str):
-    """Load RIGHT_HAND and LEFT_HAND from scores/<name>.py"""
-    path = os.path.join("scores", f"{name}.py")
+    """Load RIGHT_HAND and LEFT_HAND from the current scores directory."""
+    path = os.path.join(str(get_scores_dir()), f"{name}.py")
     if not os.path.exists(path):
         print(f"Score not found: {path}")
         print("Available scores:")
@@ -44,7 +45,7 @@ def load_score(name: str):
 
 
 def list_scores():
-    files = sorted(f[:-3] for f in os.listdir("scores") if f.endswith(".py"))
+    files = sorted(f[:-3] for f in os.listdir(str(get_scores_dir())) if f.endswith(".py"))
     for f in files:
         print(f"  {f}")
 

@@ -18,6 +18,89 @@ uvicorn server:app --reload --port 8000
 
 Open [http://localhost:8000](http://localhost:8000) to browse scores, add new pieces, and play.
 
+## Desktop App (v1)
+
+The first desktop version wraps the existing FastAPI app in Electron and starts a local Python backend automatically.
+
+### Quick start for a new macOS tester
+
+```bash
+git clone <your-repo-url>
+cd accompy
+./scripts/setup_desktop_mac.sh
+./scripts/run_desktop_mac.sh
+```
+
+What a new user needs installed first:
+
+- `Python 3`
+- `npm` / Node.js
+- `Audiveris` if they want PDF/image import
+
+What happens after launch:
+
+- The desktop app opens like a normal app window.
+- Score files are stored in the user's local app data folder, not in the repo:
+  - `~/Library/Application Support/accompy/scores`
+- On first launch, starter scores from the repo are copied there once.
+- New imports/conversions also go there.
+
+### Manual setup
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+npm install
+npm run desktop
+```
+
+Notes:
+
+- The Electron app looks for Python in `.venv/bin/python3` first.
+- If your Python lives elsewhere, start with `PYTHON_PATH=/path/to/python npm run desktop`.
+- The desktop shell starts the backend on `127.0.0.1:8765`.
+- In desktop mode, user score files are stored outside the repo in the app data folder:
+  - macOS: `~/Library/Application Support/accompy/scores`
+- On first launch, the bundled repo `scores/` files are copied there as starter content. After that, the desktop app reads and writes from the user-local folder.
+- To create a first packaged mac build directory:
+
+```bash
+npm run desktop:dist
+```
+
+- To attempt a macOS DMG build:
+
+```bash
+npm run desktop:dmg
+```
+
+This is still a thin desktop wrapper around the current web app, not yet a fully standalone app with bundled Python/Audiveris. A tester still needs local dependencies installed.
+
+## Self-contained macOS beta build
+
+If you want to test a more app-like mac build that bundles the Python backend:
+
+```bash
+./scripts/setup_desktop_mac.sh
+pip install pyinstaller
+./scripts/build_backend_mac.sh
+npm run desktop:dmg
+```
+
+What this bundles:
+
+- Electron shell
+- Python backend binary
+- static frontend files
+- starter scores copied into the app bundle
+
+What this still does not bundle:
+
+- `Audiveris`
+
+So the packaged beta can run without a separate Python install, but PDF/image import still needs Audiveris on the tester's Mac.
+
 ## CLI
 
 ```bash

@@ -17,6 +17,7 @@ import os
 import re
 import argparse
 from music21 import converter, note, chord
+from src.paths import get_scores_dir
 
 
 def beat_to_float(beat) -> float:
@@ -108,7 +109,7 @@ def extract_measure_beats(score) -> list[float]:
     return [float(m.offset) for m in first_part.getElementsByClass('Measure')]
 
 
-def convert_score_source(source: str, *, name: str | None = None, out_dir: str = "scores"):
+def convert_score_source(source: str, *, name: str | None = None, out_dir: str | None = None):
     if source.startswith("corpus:"):
         from music21 import corpus as m21corpus
         corpus_path = source[len("corpus:"):]
@@ -124,6 +125,7 @@ def convert_score_source(source: str, *, name: str | None = None, out_dir: str =
     measure_beats = extract_measure_beats(score)
     title = score.metadata.title if score.metadata and score.metadata.title else title_fallback
     score_name = slugify_score_name(name or title_fallback)
+    out_dir = out_dir or str(get_scores_dir())
     out_py = os.path.join(out_dir, f"{score_name}.py")
     out_html = os.path.join(out_dir, f"{score_name}.html")
 
@@ -197,11 +199,11 @@ def main():
     parser = argparse.ArgumentParser(description="Convert MusicXML to an accompy score")
     parser.add_argument("input", help="Path to .mxl/.xml file, or corpus:<path>")
     parser.add_argument("--name", help="Score name (default: auto-derived from input)")
-    parser.add_argument("--out", help="Explicit output path (overrides --name and scores/ folder)")
+    parser.add_argument("--out", help="Explicit output path (overrides --name and default scores folder)")
     args = parser.parse_args()
 
     print(f"Parsing {args.input} ...")
-    out_dir = "scores"
+    out_dir = str(get_scores_dir())
     out_name = args.name
     if args.out:
         out_dir = os.path.dirname(args.out) or "."
@@ -275,12 +277,12 @@ def render_html(mxl_path: str, out_path: str, title: str):
 
 
 def show_melody(name: str = None):
-    """Print the RIGHT_HAND from scores/<name>.py as note names + keyboard keys."""
+    """Print the RIGHT_HAND from the current scores dir as note names + keyboard keys."""
     import importlib.util, os
     if not name:
         print("Usage: python convert_score.py --show <score_name>")
         sys.exit(1)
-    path = os.path.join("scores", f"{name}.py")
+    path = os.path.join(str(get_scores_dir()), f"{name}.py")
     if not os.path.exists(path):
         print(f"Score not found: {path}")
         sys.exit(1)

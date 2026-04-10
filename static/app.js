@@ -542,6 +542,7 @@ class Accompanist {
 // ── App State ────────────────────────────────────────────────────────────────
 let state = {
   scores:           [],
+  serverScores:     [],
   current:          null,
   tracker:          null,
   accompanist:      null,
@@ -559,6 +560,8 @@ let _noteHighwayBps = 1;
 let _sheetMeasureEls = [];
 let _sheetHighlightRect = null;
 let _sheetHighlightIndex = -1;
+const SCORE_LIBRARY_KEY = 'accompy_score_library_v1';
+const SCORE_LIBRARY_INIT_KEY = 'accompy_score_library_initialized_v1';
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 async function api(path, opts) {
@@ -572,6 +575,33 @@ async function api(path, opts) {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+}
+
+function loadPersonalScoreLibrary() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SCORE_LIBRARY_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((name) => typeof name === 'string' && name) : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePersonalScoreLibrary(names) {
+  const deduped = [...new Set((names || []).filter(Boolean))].sort();
+  localStorage.setItem(SCORE_LIBRARY_KEY, JSON.stringify(deduped));
+  localStorage.setItem(SCORE_LIBRARY_INIT_KEY, '1');
+  state.scores = deduped;
+  return deduped;
+}
+
+function addScoreToLibrary(name) {
+  return savePersonalScoreLibrary([...loadPersonalScoreLibrary(), name]);
+}
+
+function removeScoreFromLibrary(name) {
+  localStorage.removeItem(`accompy_score_${name}`);
+  localStorage.removeItem(`accompy_score_v2_${name}`);
+  return savePersonalScoreLibrary(loadPersonalScoreLibrary().filter((item) => item !== name));
 }
 
 function normalizedScoreGridColumns(value) {
@@ -701,12 +731,19 @@ function sanitizeSheetFrame(frame) {
 async function loadScoreList() {
   applyScoreGridColumns(state.scoreGridColumns);
   const { scores = [], items = [] } = await api('/api/scores');
-  state.scores = scores;
+  state.serverScores = scores;
+  const existing = new Set(scores);
+  let library = loadPersonalScoreLibrary();
+  if (!localStorage.getItem(SCORE_LIBRARY_INIT_KEY)) library = scores;
+  library = savePersonalScoreLibrary(library.filter((name) => existing.has(name)));
   const grid = document.getElementById('score-grid');
-  const scoreItems = items.length ? items : scores.map(name => ({ name, has_sheet: false }));
+  const itemByName = new Map((items.length ? items : scores.map(name => ({ name, has_sheet: false }))).map((item) => [item.name, item]));
+  const scoreItems = library
+    .map((name) => itemByName.get(name))
+    .filter(Boolean);
   grid.innerHTML = scoreItems.map(({ name, has_sheet }) => `
     <div class="score-card" id="card-${name}" onclick="openScore('${name}')">
-      <button class="delete-btn" onclick="deleteScore(event, '${name}')" title="Remove">✕</button>
+      <button class="delete-btn" onclick="deleteScore(event, '${name}')" title="Remove from my list">✕</button>
       <div class="score-preview${has_sheet ? '' : ' empty'}">
         ${has_sheet
           ? `<iframe
@@ -1442,11 +1479,9 @@ function enableMidi() {
 // ── Delete piece ─────────────────────────────────────────────────────────────
 async function deleteScore(e, name) {
   e.stopPropagation();
-  if (!confirm(`Remove "${formatName(name)}"?`)) return;
-  await api(`/api/scores/${name}`, { method: 'DELETE' });
-  localStorage.removeItem(`accompy_score_${name}`);
-  document.getElementById(`card-${name}`)?.remove();
-  state.scores = state.scores.filter(s => s !== name);
+  if (!confirm(`Remove "${formatName(name)}" from this browser's list?`)) return;
+  removeScoreFromLibrary(name);
+  await loadScoreList();
 }
 
 // ── Add piece modal ───────────────────────────────────────────────────────────
@@ -1551,6 +1586,7 @@ async function addPiece(corpusPath, safeName) {
     item.classList.add('done');
     item.querySelector('button').textContent = '✓ Added';
     item.querySelector('button').disabled = true;
+    addScoreToLibrary(safeName);
 
     // Refresh score list in background
     await loadScoreList();
@@ -1585,6 +1621,7 @@ async function importScoreFiles() {
     if (!response.ok) {
       throw new Error(payload.detail || 'Import failed');
     }
+    addScoreToLibrary(payload.name);
     setImportStatus(`Imported ${formatName(payload.name)}.`, 'success');
     await loadScoreList();
     setTimeout(() => closeAddModal(), 350);
