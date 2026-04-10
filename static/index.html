@@ -95,9 +95,9 @@
       </div>
       <div class="latency-row">
         <label for="latency-slider">Latency compensation</label>
-        <input id="latency-slider" type="range" min="0" max="500" step="10" value="280"
+        <input id="latency-slider" type="range" min="0" max="500" step="10" value="0"
                oninput="setLatencyCompensation(this.value)">
-        <span id="latency-value">280 ms</span>
+        <span id="latency-value">0 ms</span>
       </div>
     </div>
   </div>
@@ -193,9 +193,9 @@
 
       <div class="mic-row" style="margin-top:.6rem">
         <label style="font-size:.8rem;color:#aaa;width:100px">Noise gate</label>
-        <input id="noise-gate" type="range" min="1" max="80" value="8"
+        <input id="noise-gate" type="range" min="1" max="80" value="1"
                oninput="onNoiseGateChange(this.value)" style="flex:1">
-        <span id="noise-gate-val" style="font-size:.8rem;color:#555;width:36px;text-align:right">8</span>
+        <span id="noise-gate-val" style="font-size:.8rem;color:#555;width:36px;text-align:right">1</span>
       </div>
       <p style="font-size:.75rem;color:#555;margin-top:.5rem;line-height:1.5">
         The bar shows input level. The red line is the noise gate — sounds below it are ignored.<br>

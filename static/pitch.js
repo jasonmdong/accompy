@@ -15,10 +15,13 @@
 const MIN_FREQ = 55;
 const MAX_FREQ = 1760;
 const YIN_THRESHOLD = 0.12;
-const MIN_ACCEPTED_CLARITY = 0.48;
-const FAST_ACCEPT_CLARITY = 0.72;
+const MIN_ACCEPTED_CLARITY = 0.42;
+const FAST_ACCEPT_CLARITY = 0.64;
 const MERGE_CANDIDATE_CENTS = 30;
 const STABLE_CENTS = 35;
+const EXPECTED_NOTE_MATCH_BONUS = 0.18;
+const EXPECTED_NOTE_NEAR_BONUS = 0.10;
+const EXPECTED_NOTE_FAR_PENALTY = 0.08;
 
 class PitchDetector {
   constructor(ctx, {
@@ -69,10 +72,15 @@ class PitchDetector {
     this._noteCooldownMs = 90;
     this._onsetFrames    = 0;
     this._onsetSkip      = 0;
+    this._expectedMidi   = null;
   }
 
   setThreshold(v) {
     this._threshold = v;
+  }
+
+  setExpectedMidi(midi) {
+    this._expectedMidi = Number.isFinite(midi) ? midi : null;
   }
 
   async start() {
@@ -255,6 +263,7 @@ class PitchDetector {
     for (const freq of candidates) {
       const spectralScore = this._candidateSpectrumScore(freq, freqData);
       let score = spectralScore * 0.58;
+      const midi = this._freqToMidi(freq);
 
       if (yin) {
         const cents = Math.abs(this._centsDiff(freq, yin.freq));
@@ -268,8 +277,15 @@ class PitchDetector {
         else if (Math.abs(cents - 1200) < 45) score += fft.confidence * (freq < fft.freq ? 0.12 : 0.05);
       }
 
+      if (this._expectedMidi !== null) {
+        const distance = Math.abs(midi - this._expectedMidi);
+        if (distance <= 1) score += EXPECTED_NOTE_MATCH_BONUS;
+        else if (distance <= 3) score += EXPECTED_NOTE_NEAR_BONUS;
+        else if (distance >= 7) score -= EXPECTED_NOTE_FAR_PENALTY;
+      }
+
       if (!best || score > best.score) {
-        best = { freq, score, spectralScore };
+        best = { freq, midi, score, spectralScore };
       }
     }
 
@@ -277,7 +293,7 @@ class PitchDetector {
 
     return {
       freq: best.freq,
-      midi: this._freqToMidi(best.freq),
+      midi: best.midi,
       clarity: Math.min(1, best.score),
       yinClarity: yin?.clarity ?? 0,
       fftConfidence: fft?.confidence ?? 0,

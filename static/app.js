@@ -268,6 +268,32 @@ async function ensureSamplePlayback(instruments = []) {
   return loaded.some(Boolean);
 }
 
+function isSampleBackedInstrument(instrument) {
+  const sampledInstrument = SAMPLE_ALIAS[instrument] || instrument;
+  return !!SAMPLE_LIBRARY[sampledInstrument];
+}
+
+function hasLoadedSampler(instrument) {
+  const sampledInstrument = SAMPLE_ALIAS[instrument] || instrument;
+  return !!_sampleSamplers[sampledInstrument];
+}
+
+function currentScoreInstruments() {
+  const parts = state.current?.parts || [];
+  if (!parts.length) return [getInstrumentForPart(state.selectedPart ?? 0)];
+  return parts.map((_, idx) => getInstrumentForPart(idx));
+}
+
+async function preloadCurrentScoreInstruments() {
+  if (!state.current) return false;
+  try {
+    return await ensureSamplePlayback(currentScoreInstruments());
+  } catch (error) {
+    console.warn('Sample preload failed:', error);
+    return false;
+  }
+}
+
 function playSynthNote(midi, velocity = 0.6, instrument = 'piano') {
   const ctx    = audioCtx();
   const freq   = 440 * Math.pow(2, (midi - 69) / 12);
@@ -327,6 +353,7 @@ function playNote(midi, velocity = 0.6, instrument = 'piano', opts = {}) {
     sampler.triggerAttackRelease(midiToToneNote(midi), duration, undefined, Math.min(1, velocity));
     return;
   }
+  if (isSampleBackedInstrument(instrument)) return;
   playSynthNote(midi, velocity, instrument);
 }
 
@@ -348,6 +375,15 @@ function eventLabel(event) {
   const pitches = eventPitches(event);
   if (!pitches.length) return '—';
   return pitches.map((pitch) => pitchName(pitch)).join(' / ');
+}
+
+function syncExpectedMicNote() {
+  if (!_pitchDetector || !state.playing) return;
+  if (typeof _pitchDetector.setExpectedMidi !== 'function') return;
+  const rightHand = getRightHand();
+  const position = state.tracker?.position ?? 0;
+  const expected = leadPitchFromEvent(rightHand[position] ?? rightHand[0]);
+  _pitchDetector.setExpectedMidi(expected);
 }
 
 // ── Tracker ──────────────────────────────────────────────────────────────────
@@ -493,7 +529,7 @@ class Accompanist {
         const current = this._currentBeat();
         if (current >= beat - 0.005) {
           const instr = this._instruments[0] || 'piano';
-          playChord(pitches, 0.5, instr, { preferSynth: _midiConnected });
+          playChord(pitches, 0.5, instr);
           this._lhIdx++;
         }
       }
@@ -780,18 +816,22 @@ async function openScore(name) {
   buildKeyboard(getRightHand());
   updateNextKey(getRightHand(), 0);
   renderNoteHighway();
+  syncExpectedMicNote();
+  preloadCurrentScoreInstruments();
   showScreen('play-screen');
   document.getElementById('start-btn').disabled = false;
   document.getElementById('stop-btn').disabled  = true;
 }
 
-function selectPart(idx) {
+async function selectPart(idx) {
   state.selectedPart = idx;
   document.querySelectorAll('.part-btn').forEach((b, i) =>
     b.classList.toggle('selected', i === idx));
   buildKeyboard(getRightHand());
   updateNextKey(getRightHand(), 0);
   renderNoteHighway();
+  syncExpectedMicNote();
+  preloadCurrentScoreInstruments();
 }
 
 function getInstrumentForPart(idx) {
@@ -810,6 +850,7 @@ async function changeInstrument(partIdx, instrument) {
     });
     localStorage.removeItem(`accompy_score_${state.current.name}`);
   } catch { /* non-critical — change is applied in-memory either way */ }
+  preloadCurrentScoreInstruments();
 }
 
 function getRightHand() {
@@ -1072,6 +1113,7 @@ function updateNextKey(rightHand, position) {
   });
   document.getElementById('next-note-display').textContent = eventLabel(event);
   renderNoteHighway();
+  syncExpectedMicNote();
 }
 
 // ── Start / Stop ──────────────────────────────────────────────────────────────
@@ -1103,6 +1145,16 @@ async function startPlaying() {
     startBtn.textContent = originalLabel;
   }
 
+  const missingSampleInstrument = instrumentsInUse.find((instrument) =>
+    isSampleBackedInstrument(instrument) && !hasLoadedSampler(instrument)
+  );
+  if (missingSampleInstrument) {
+    startBtn.disabled = false;
+    document.getElementById('stop-btn').disabled = true;
+    alert(`Could not load the sampled ${missingSampleInstrument} instrument yet. Reload and try again.`);
+    return;
+  }
+
   state.tracker     = new Tracker(right, initialBps);
   state.accompanist = new Accompanist(left, right, initialBps, leftInstruments);
   state.accompanist.start();
@@ -1119,6 +1171,7 @@ async function startPlaying() {
   startNoteHighwayLoop();
   enableMidi();
   if (_inputMode === 'mic') _startMic();
+  syncExpectedMicNote();
 }
 
 function stopPlaying() {
@@ -1130,6 +1183,7 @@ function stopPlaying() {
   document.getElementById('start-btn').disabled = false;
   document.getElementById('stop-btn').disabled  = true;
   document.getElementById('next-note-display').textContent = '—';
+  if (typeof _pitchDetector?.setExpectedMidi === 'function') _pitchDetector.setExpectedMidi(null);
   renderNoteHighway();
 }
 
@@ -1149,6 +1203,7 @@ function handleNoteMic(midi) {
     document.getElementById('progress-fill').style.width =
       (state.tracker.progress() * 100).toFixed(1) + '%';
     updateNextKey(getRightHand(), state.tracker.position);
+    syncExpectedMicNote();
   }
   if (state.tracker.isFinished()) stopPlaying();
 }
@@ -1346,6 +1401,7 @@ async function _startMic() {
   })();
   try {
     await _pitchDetector.start();
+    syncExpectedMicNote();
     _micDot('active');
   } catch (e) {
     alert(e.message);
@@ -1566,5 +1622,6 @@ window.importScoreFiles = importScoreFiles;
 // ── Init ──────────────────────────────────────────────────────────────────────
 initLatencyControls();
 initImportControls();
-setLatencyCompensation(localStorage.getItem('accompy_latency_comp_ms') || '280');
+onNoiseGateChange(document.getElementById('noise-gate')?.value || '1');
+setLatencyCompensation(localStorage.getItem('accompy_latency_comp_ms') || '0');
 loadScoreList();
