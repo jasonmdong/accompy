@@ -8,7 +8,6 @@ const SERVER_HOST = '127.0.0.1';
 const SERVER_PORT = Number(process.env.ACCOMPY_PORT || 8765);
 const SERVER_URL = `http://${SERVER_HOST}:${SERVER_PORT}`;
 const ROOT_DIR = path.resolve(__dirname, '..');
-const DEV_SCORES_DIR = path.join(ROOT_DIR, 'scores');
 const DEV_STATIC_DIR = path.join(ROOT_DIR, 'static');
 
 let mainWindow = null;
@@ -19,12 +18,6 @@ function bundledResourcesDir() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'app-resources')
     : ROOT_DIR;
-}
-
-function bundledScoresDir() {
-  return app.isPackaged
-    ? path.join(bundledResourcesDir(), 'starter-scores')
-    : DEV_SCORES_DIR;
 }
 
 function bundledStaticDir() {
@@ -75,14 +68,11 @@ function startBackend() {
       return;
     }
 
-    const userScoresDir = path.join(app.getPath('userData'), 'scores');
-    seedScoresIfNeeded(userScoresDir);
     const env = {
       ...process.env,
       PYTHONUNBUFFERED: '1',
       ACCOMPY_HOST: SERVER_HOST,
       ACCOMPY_PORT: String(SERVER_PORT),
-      ACCOMPY_SCORES_DIR: userScoresDir,
       ACCOMPY_STATIC_DIR: bundledStaticDir(),
     };
 
@@ -116,21 +106,6 @@ function startBackend() {
       .then(resolve)
       .catch((error) => reject(error));
   });
-}
-
-function seedScoresIfNeeded(targetDir) {
-  fs.mkdirSync(targetDir, { recursive: true });
-  const existing = fs.readdirSync(targetDir).filter((name) => name.endsWith('.py'));
-  const sourceDir = bundledScoresDir();
-  if (existing.length || !fs.existsSync(sourceDir)) return;
-
-  for (const file of fs.readdirSync(sourceDir)) {
-    if (!file.endsWith('.py') && !file.endsWith('.html')) continue;
-    fs.copyFileSync(
-      path.join(sourceDir, file),
-      path.join(targetDir, file)
-    );
-  }
 }
 
 function waitForServer(timeoutMs = 20000) {

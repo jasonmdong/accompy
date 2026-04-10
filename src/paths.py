@@ -10,7 +10,7 @@ def _resolve_base_dir() -> Path:
 
 
 REPO_ROOT = _resolve_base_dir()
-DEFAULT_SCORES_DIR = REPO_ROOT / "scores"
+DEFAULT_SCORES_DIR = REPO_ROOT / ".accompy_scores"
 DEFAULT_STATIC_DIR = REPO_ROOT / "static"
 
 

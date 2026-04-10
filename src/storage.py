@@ -1,13 +1,9 @@
-import importlib.util
 import hashlib
 import os
-from pathlib import Path
 from datetime import datetime, timezone
 
 import requests
 from fastapi import HTTPException
-
-from src.paths import get_scores_dir
 
 
 def _score_row_to_payload(row: dict) -> dict:
@@ -30,46 +26,6 @@ def _score_row_to_payload(row: dict) -> dict:
         "left_hand": left_hand,
         "sheet_html": row.get("sheet_html") or "",
     }
-
-
-class LocalScoreStore:
-    def __init__(self):
-        self.scores_dir = Path(get_scores_dir())
-
-    def list_scores(self):
-        names = sorted(f.stem for f in self.scores_dir.glob("*.py"))
-        return {
-            "scores": names,
-            "items": [
-                {
-                    "name": name,
-                    "has_sheet": (self.scores_dir / f"{name}.html").exists(),
-                }
-                for name in names
-            ],
-        }
-
-    def load_score(self, name: str):
-        path = self.scores_dir / f"{name}.py"
-        if not path.exists():
-            raise HTTPException(status_code=404, detail=f"Score '{name}' not found")
-        spec = importlib.util.spec_from_file_location("_score", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        parts = getattr(mod, "PARTS", [
-            {"name": "Melody", "notes": [[p, b] for p, b in mod.RIGHT_HAND]},
-            {"name": "Accompaniment", "notes": [[p, b] for p, b in mod.LEFT_HAND]},
-        ])
-        return {
-            "name": name,
-            "title": name,
-            "parts": parts,
-            "has_sheet": (self.scores_dir / f"{name}.html").exists(),
-            "measure_beats": list(getattr(mod, "MEASURE_BEATS", [])),
-            "right_hand": mod.RIGHT_HAND,
-            "left_hand": mod.LEFT_HAND,
-            "sheet_html": (self.scores_dir / f"{name}.html").read_text(encoding="utf-8") if (self.scores_dir / f"{name}.html").exists() else "",
-        }
 
 
 class SupabaseScoreStore:
@@ -276,6 +232,6 @@ class SupabaseScoreStore:
 def create_score_store():
     url = os.getenv("SUPABASE_URL", "").strip()
     key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-    if url and key:
-        return SupabaseScoreStore(url, key)
-    return LocalScoreStore()
+    if not (url and key):
+        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.")
+    return SupabaseScoreStore(url, key)

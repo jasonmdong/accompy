@@ -23,7 +23,6 @@
       "src/**/*",
       "run.py",
       "requirements.txt",
-      "scores/**/*",
       "LICENSE",
       "README.md",
       "package.json"
@@ -42,13 +41,6 @@
       {
         "from": "static",
         "to": "app-resources/static",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "scores",
-        "to": "app-resources/starter-scores",
         "filter": [
           "**/*"
         ]

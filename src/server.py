@@ -14,7 +14,6 @@ import os
 import re
 import tempfile
 import subprocess
-import importlib.util
 import hashlib
 import hmac
 import secrets
@@ -28,8 +27,8 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from src.env import load_local_env
 from src.convert_score import convert_score_source, slugify_score_name
-from src.paths import get_scores_dir, get_static_dir
-from src.storage import create_score_store, LocalScoreStore, SupabaseScoreStore
+from src.paths import get_static_dir
+from src.storage import create_score_store, SupabaseScoreStore
 
 load_local_env()
 
@@ -55,15 +54,9 @@ def _corpus_index():
         entries.append({'path': rel, 'composer': composer, 'title': title})
     return entries
 
-SCORES_DIR = str(get_scores_dir())
 STATIC_DIR = str(get_static_dir())
 ALLOWED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 ALLOWED_PDF_SUFFIXES = {".pdf"}
-
-# In-memory score cache: name → (mtime, module)
-# Invalidated automatically when the .py file changes on disk.
-_score_cache: dict[str, tuple[float, object]] = {}
-_measure_cache: dict[str, tuple[float, list[float]]] = {}
 _score_store = create_score_store()
 SESSION_COOKIE_NAME = "accompy_session"
 SESSION_DAYS = 30
@@ -130,82 +123,6 @@ def current_app_user_for_request(request: Request) -> dict | None:
     if not token:
         return None
     return _score_store.get_app_session_user(token)
-
-
-def load_score_module(name: str):
-    path = os.path.join(SCORES_DIR, f"{name}.py")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail=f"Score '{name}' not found")
-
-    mtime = os.path.getmtime(path)
-    cached = _score_cache.get(name)
-    if cached and cached[0] == mtime:
-        return cached[1]
-
-    spec = importlib.util.spec_from_file_location("_score", path)
-    mod  = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    _score_cache[name] = (mtime, mod)
-    return mod
-
-
-def load_measure_beats(name: str) -> list[float]:
-    try:
-        mod = load_score_module(name)
-        if hasattr(mod, "MEASURE_BEATS"):
-            return list(mod.MEASURE_BEATS)
-    except HTTPException:
-        return []
-
-    path = os.path.join(SCORES_DIR, f"{name}.py")
-    if not os.path.exists(path):
-        return []
-
-    mtime = os.path.getmtime(path)
-    cached = _measure_cache.get(name)
-    if cached and cached[0] == mtime:
-        return cached[1]
-
-    try:
-        with open(path, "r") as f:
-            first_line = f.readline().strip()
-    except OSError:
-        return []
-
-    prefixes = ("# Auto-generated: ", "# Auto-generated score: ")
-    source_ref = None
-    for prefix in prefixes:
-        if first_line.startswith(prefix):
-            source_ref = first_line[len(prefix):].strip()
-            break
-
-    if not source_ref:
-        return []
-
-    try:
-        from music21 import corpus as m21corpus, converter
-
-        if source_ref.startswith("corpus:"):
-            score = m21corpus.parse(source_ref[len("corpus:"):])
-        else:
-            try:
-                score = converter.parse(source_ref)
-            except Exception:
-                # Older generated scores may store a bare music21 corpus path.
-                score = m21corpus.parse(source_ref)
-
-        first_part = score.parts[0] if score.parts else score
-        measure_beats = [float(m.offset) for m in first_part.getElementsByClass('Measure')]
-    except Exception:
-        return []
-
-    _measure_cache[name] = (mtime, measure_beats)
-    return measure_beats
-
-
-def invalidate_score_cache(name: str):
-    _score_cache.pop(name, None)
-    _measure_cache.pop(name, None)
 
 
 def score_name_from_input(raw: str) -> str:
@@ -415,18 +332,14 @@ def logout(request: Request, response: Response):
 
 @app.get("/api/scores")
 def list_scores(request: Request):
-    if isinstance(_score_store, SupabaseScoreStore):
-        user_id = require_supabase_user_id(request, "score listing")
-        return _score_store.list_scores(user_id)
-    return _score_store.list_scores()
+    user_id = require_supabase_user_id(request, "score listing")
+    return _score_store.list_scores(user_id)
 
 
 @app.get("/api/scores/{name}")
 def get_score(name: str, request: Request):
-    if isinstance(_score_store, SupabaseScoreStore):
-        user_id = require_supabase_user_id(request, "score loading")
-        return _score_store.load_score(user_id, name)
-    return _score_store.load_score(name)
+    user_id = require_supabase_user_id(request, "score loading")
+    return _score_store.load_score(user_id, name)
 
 
 class InstrumentUpdate(BaseModel):
@@ -436,109 +349,42 @@ class InstrumentUpdate(BaseModel):
 
 @app.patch("/api/scores/{name}/instrument")
 def update_instrument(name: str, req: InstrumentUpdate, request: Request):
-    """Persist an instrument change for a part in the score .py file."""
-    if isinstance(_score_store, SupabaseScoreStore):
-        user_id = require_supabase_user_id(request, "score updates")
-        score = _score_store.load_score(user_id, name)
-        parts = score["parts"]
-        if req.part_index < 0 or req.part_index >= len(parts):
-            raise HTTPException(status_code=400, detail="Invalid part index")
-        parts[req.part_index]["instrument"] = req.instrument
-        _score_store.save_score(user_id, {
-            "name": score["name"],
-            "title": score.get("title") or score["name"],
-            "parts": parts,
-            "measure_beats": score.get("measure_beats") or [],
-            "sheet_html": score.get("sheet_html") or "",
-            "source_type": "converted",
-        })
-        return {"updated": True}
-
-    mod  = load_score_module(name)
-    path = os.path.join(SCORES_DIR, f"{name}.py")
-
-    if not hasattr(mod, "PARTS"):
-        raise HTTPException(status_code=400, detail="Score has no PARTS (legacy format)")
-    parts = mod.PARTS
+    """Persist an instrument change for a part in the stored score."""
+    user_id = require_supabase_user_id(request, "score updates")
+    score = _score_store.load_score(user_id, name)
+    parts = score["parts"]
     if req.part_index < 0 or req.part_index >= len(parts):
         raise HTTPException(status_code=400, detail="Invalid part index")
-
     parts[req.part_index]["instrument"] = req.instrument
-
-    # Rewrite the file preserving everything, just updating PARTS
-    with open(path, "r") as f:
-        content = f.read()
-
-    import ast
-    # Replace just the PARTS line
-    new_parts_line = f"PARTS = {parts!r}"
-    lines = content.splitlines()
-    new_lines = []
-    for line in lines:
-        if line.startswith("PARTS = "):
-            new_lines.append(new_parts_line)
-        else:
-            new_lines.append(line)
-    with open(path, "w") as f:
-        f.write("\n".join(new_lines) + "\n")
-
-    _score_cache.pop(name, None)
-    _measure_cache.pop(name, None)
+    _score_store.save_score(user_id, {
+        "name": score["name"],
+        "title": score.get("title") or score["name"],
+        "parts": parts,
+        "measure_beats": score.get("measure_beats") or [],
+        "sheet_html": score.get("sheet_html") or "",
+        "source_type": "converted",
+    })
     return {"updated": True}
 
 
 @app.delete("/api/scores/{name}")
 def delete_score(name: str, request: Request):
-    if isinstance(_score_store, SupabaseScoreStore):
-        user_id = current_user_id_for_request(request)
-        if not user_id:
-            raise HTTPException(status_code=500, detail="Authenticated user is required for Supabase-backed deletes.")
-        _score_store.delete_score(user_id, name)
-        return {"deleted": [name]}
-    removed = []
-    for ext in (".py", ".html"):
-        path = os.path.join(SCORES_DIR, f"{name}{ext}")
-        if os.path.exists(path):
-            os.remove(path)
-            removed.append(path)
-    _score_cache.pop(name, None)
-    _measure_cache.pop(name, None)
-    if not removed:
-        raise HTTPException(status_code=404, detail=f"Score '{name}' not found")
-    return {"deleted": removed}
+    user_id = require_supabase_user_id(request, "deletes")
+    _score_store.delete_score(user_id, name)
+    return {"deleted": [name]}
 
 
 @app.get("/api/scores/{name}/meta")
 def get_score_meta(name: str, request: Request):
-    if isinstance(_score_store, SupabaseScoreStore):
-        return {"name": name, "mtime": 0}
-    path = os.path.join(SCORES_DIR, f"{name}.py")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail=f"Score '{name}' not found")
-    return {"name": name, "mtime": os.path.getmtime(path)}
+    return {"name": name, "mtime": 0}
 
 
 @app.get("/api/scores/{name}/sheet")
 def get_sheet(name: str, request: Request):
-    if isinstance(_score_store, SupabaseScoreStore):
-        user_id = require_supabase_user_id(request, "sheet loading")
-        html = _score_store.load_score(user_id, name).get("sheet_html") or ""
-        if not html:
-            raise HTTPException(status_code=404, detail="No sheet music for this score")
-        html = re.sub(r"\s*<h1>.*?</h1>\s*", "\n", html, count=1, flags=re.IGNORECASE | re.DOTALL)
-        return HTMLResponse(content=html)
-    path = os.path.join(SCORES_DIR, f"{name}.html")
-    if not os.path.exists(path):
+    user_id = require_supabase_user_id(request, "sheet loading")
+    html = _score_store.load_score(user_id, name).get("sheet_html") or ""
+    if not html:
         raise HTTPException(status_code=404, detail="No sheet music for this score")
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            html = f.read()
-    except OSError:
-        raise HTTPException(status_code=500, detail="Could not read sheet music")
-
-    # Older generated sheet pages include a print/save heading that looks out of
-    # place inside the app iframe. Strip it at serve time so existing scores do
-    # not need to be regenerated.
     html = re.sub(r"\s*<h1>.*?</h1>\s*", "\n", html, count=1, flags=re.IGNORECASE | re.DOTALL)
     return HTMLResponse(content=html)
 
@@ -550,43 +396,29 @@ class ConvertRequest(BaseModel):
 
 @app.post("/api/convert")
 def convert_score(req: ConvertRequest, request: Request):
-    out_dir = SCORES_DIR
-    temp_dir = None
-    if isinstance(_score_store, SupabaseScoreStore):
-        temp_dir = tempfile.TemporaryDirectory(prefix="accompy_convert_")
-        out_dir = temp_dir.name
+    temp_dir = tempfile.TemporaryDirectory(prefix="accompy_convert_")
+    out_dir = temp_dir.name
     try:
         result = convert_score_source(f"corpus:{req.corpus_path}", name=score_name_from_input(req.name), out_dir=out_dir)
     except Exception as exc:
-        if temp_dir:
-            temp_dir.cleanup()
+        temp_dir.cleanup()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if isinstance(_score_store, SupabaseScoreStore):
-        user_id = require_supabase_user_id(request, "score saving")
-        saved = _score_store.save_score(user_id, {
-            "name": result["name"],
-            "title": result["title"],
-            "parts": result["parts"],
-            "measure_beats": result["measure_beats"],
-            "sheet_html": Path(result["out_html"]).read_text(encoding="utf-8") if os.path.exists(result["out_html"]) else "",
-            "source_type": "corpus",
-        })
-        if temp_dir:
-            temp_dir.cleanup()
-        return {
-            "name": saved["name"],
-            "parts": len(saved["parts"]),
-            "total_notes": sum(len(part.get("notes", [])) for part in saved["parts"]),
-            "has_sheet": saved["has_sheet"],
-    }
-
-    invalidate_score_cache(result["name"])
-    return {
+    user_id = require_supabase_user_id(request, "score saving")
+    saved = _score_store.save_score(user_id, {
         "name": result["name"],
-        "parts": result["parts_count"],
-        "total_notes": result["total_notes"],
-        "has_sheet": result["has_sheet"],
+        "title": result["title"],
+        "parts": result["parts"],
+        "measure_beats": result["measure_beats"],
+        "sheet_html": Path(result["out_html"]).read_text(encoding="utf-8") if os.path.exists(result["out_html"]) else "",
+        "source_type": "corpus",
+    })
+    temp_dir.cleanup()
+    return {
+        "name": saved["name"],
+        "parts": len(saved["parts"]),
+        "total_notes": sum(len(part.get("notes", [])) for part in saved["parts"]),
+        "has_sheet": saved["has_sheet"],
     }
 
 
@@ -614,34 +446,24 @@ async def import_score(
         musicxml_path = find_musicxml_output(output_dir)
 
         try:
-            out_dir = output_dir if isinstance(_score_store, SupabaseScoreStore) else SCORES_DIR
-            result = convert_score_source(str(musicxml_path), name=score_name, out_dir=str(out_dir))
+            result = convert_score_source(str(musicxml_path), name=score_name, out_dir=str(output_dir))
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Could not convert Audiveris output: {exc}") from exc
 
-    if isinstance(_score_store, SupabaseScoreStore):
-        user_id = require_supabase_user_id(request, "score saving")
-        saved = _score_store.save_score(user_id, {
-            "name": result["name"],
-            "title": result["title"],
-            "parts": result["parts"],
-            "measure_beats": result["measure_beats"],
-            "sheet_html": Path(result["out_html"]).read_text(encoding="utf-8") if os.path.exists(result["out_html"]) else "",
-            "source_type": "upload",
-        })
-        return {
-            "name": saved["name"],
-            "parts": len(saved["parts"]),
-            "total_notes": sum(len(part.get("notes", [])) for part in saved["parts"]),
-            "has_sheet": saved["has_sheet"],
-        }
-
-    invalidate_score_cache(result["name"])
-    return {
+    user_id = require_supabase_user_id(request, "score saving")
+    saved = _score_store.save_score(user_id, {
         "name": result["name"],
-        "parts": result["parts_count"],
-        "total_notes": result["total_notes"],
-        "has_sheet": result["has_sheet"],
+        "title": result["title"],
+        "parts": result["parts"],
+        "measure_beats": result["measure_beats"],
+        "sheet_html": Path(result["out_html"]).read_text(encoding="utf-8") if os.path.exists(result["out_html"]) else "",
+        "source_type": "upload",
+    })
+    return {
+        "name": saved["name"],
+        "parts": len(saved["parts"]),
+        "total_notes": sum(len(part.get("notes", [])) for part in saved["parts"]),
+        "has_sheet": saved["has_sheet"],
     }
 
 
