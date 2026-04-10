@@ -1,6 +1,6 @@
 # Accompy
 
-A real-time piano accompanist. You play the right-hand melody — accompy tracks your tempo and plays the left hand automatically.
+A real-time accompanist (for now for piano ideally lol). Select right or left hand, then accompy tracks your tempo and plays the rest automatically.
 
 ## Setup
 
@@ -17,3 +17,7 @@ python run.py
 ```
 
 Open [http://localhost:8000](http://localhost:8000) to browse scores, add new pieces, and play.
+
+### Inspiration
+
+A small project of mine that I always wanted to do. Had the idea two years ago but never got the motivation to implement it.
