@@ -8,8 +8,11 @@
     "desktop": "electron .",
     "desktop:dev": "ELECTRON_ENABLE_LOGGING=1 electron .",
     "desktop:backend": "./scripts/build_backend_mac.sh",
+    "desktop:backend:win": "powershell -ExecutionPolicy Bypass -File .\\scripts\\build_backend_windows.ps1",
     "desktop:dist": "electron-builder --mac dir",
-    "desktop:dmg": "electron-builder --mac dmg"
+    "desktop:dmg": "electron-builder --mac dmg",
+    "desktop:dist:win": "electron-builder --win dir",
+    "desktop:nsis": "electron-builder --win nsis"
   },
   "build": {
     "appId": "com.accompy.desktop",
@@ -56,6 +59,12 @@
       "target": [
         "dir",
         "dmg"
+      ]
+    },
+    "win": {
+      "target": [
+        "dir",
+        "nsis"
       ]
     }
   },

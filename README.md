@@ -45,6 +45,29 @@ What happens after launch:
 - On first launch, starter scores from the repo are copied there once.
 - New imports/conversions also go there.
 
+### Quick start for a new Windows tester
+
+In PowerShell:
+
+```powershell
+git clone <your-repo-url>
+cd accompy
+powershell -ExecutionPolicy Bypass -File .\scripts\setup_desktop_windows.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\run_desktop_windows.ps1
+```
+
+What a new Windows user needs installed first:
+
+- `Python 3`
+- `npm` / Node.js
+- `Audiveris` if they want PDF/image import
+
+Where score files live on Windows:
+
+- `%APPDATA%\accompy\scores`
+
+On first launch, starter scores from the repo are copied there once.
+
 ### Manual setup
 
 ```bash
@@ -62,6 +85,7 @@ Notes:
 - The desktop shell starts the backend on `127.0.0.1:8765`.
 - In desktop mode, user score files are stored outside the repo in the app data folder:
   - macOS: `~/Library/Application Support/accompy/scores`
+  - Windows: `%APPDATA%\accompy\scores`
 - On first launch, the bundled repo `scores/` files are copied there as starter content. After that, the desktop app reads and writes from the user-local folder.
 - To create a first packaged mac build directory:
 
@@ -73,6 +97,18 @@ npm run desktop:dist
 
 ```bash
 npm run desktop:dmg
+```
+
+- To create a first packaged Windows directory build:
+
+```powershell
+npm run desktop:dist:win
+```
+
+- To create a first Windows installer build:
+
+```powershell
+npm run desktop:nsis
 ```
 
 This is still a thin desktop wrapper around the current web app, not yet a fully standalone app with bundled Python/Audiveris. A tester still needs local dependencies installed.
@@ -100,6 +136,17 @@ What this still does not bundle:
 - `Audiveris`
 
 So the packaged beta can run without a separate Python install, but PDF/image import still needs Audiveris on the tester's Mac.
+
+For Windows, the equivalent bundled-backend flow is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup_desktop_windows.ps1
+.venv\Scripts\python.exe -m pip install pyinstaller
+powershell -ExecutionPolicy Bypass -File .\scripts\build_backend_windows.ps1
+npm run desktop:nsis
+```
+
+That gives you a Windows installer build with the Python backend bundled, but Audiveris still remains an external dependency if the user wants PDF/image import.
 
 ## CLI
 

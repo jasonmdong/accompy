@@ -199,7 +199,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     const setupHelp = app.isPackaged
       ? `Backend startup failed.\n\nIf this is a packaged beta, rebuild the app bundle so it includes the backend binary.`
-      : `Run:\n  ./scripts/setup_desktop_mac.sh\n  ./scripts/run_desktop_mac.sh\n\nIf Python is installed elsewhere, set PYTHON_PATH before launching.`;
+      : `Run one of these:\n  macOS: ./scripts/setup_desktop_mac.sh && ./scripts/run_desktop_mac.sh\n  Windows: powershell -ExecutionPolicy Bypass -File .\\scripts\\setup_desktop_windows.ps1\n           powershell -ExecutionPolicy Bypass -File .\\scripts\\run_desktop_windows.ps1\n\nIf Python is installed elsewhere, set PYTHON_PATH before launching.`;
     dialog.showErrorBox(
       'accompy failed to start',
       `${error.message}\n\n${setupHelp}`
