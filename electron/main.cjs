@@ -35,9 +35,11 @@ function bundledStaticDir() {
 
 function resolvePythonExecutable() {
   const candidates = [];
-  const venvDir = path.join(ROOT_DIR, '.venv', 'bin');
-  candidates.push(path.join(venvDir, 'python3'));
-  candidates.push(path.join(venvDir, 'python'));
+  const venvUnixDir = path.join(ROOT_DIR, '.venv', 'bin');
+  const venvWinDir = path.join(ROOT_DIR, '.venv', 'Scripts');
+  candidates.push(path.join(venvWinDir, 'python.exe'));
+  candidates.push(path.join(venvUnixDir, 'python3'));
+  candidates.push(path.join(venvUnixDir, 'python'));
   if (process.env.PYTHON_PATH) candidates.push(process.env.PYTHON_PATH);
   candidates.push('python3');
   candidates.push('python');
