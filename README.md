@@ -13,7 +13,7 @@ pip install -r requirements.txt
 ## Web UI
 
 ```bash
-uvicorn server:app --reload --port 8000
+python run.py
 ```
 
 Open [http://localhost:8000](http://localhost:8000) to browse scores, add new pieces, and play.
@@ -25,7 +25,7 @@ The first desktop version wraps the existing FastAPI app in Electron and starts 
 ### Quick start for a new macOS tester
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/jasonmdong/accompy
 cd accompy
 ./scripts/setup_desktop_mac.sh
 ./scripts/run_desktop_mac.sh
@@ -33,7 +33,7 @@ cd accompy
 
 What a new user needs installed first:
 
-- `Python 3`
+- `Python 3.11` or newer
 - `npm` / Node.js
 - `Audiveris` if they want PDF/image import
 
