@@ -386,7 +386,157 @@ function syncExpectedMicNote() {
   _pitchDetector.setExpectedMidi(expected);
 }
 
+// ── ScoreFollower ─────────────────────────────────────────────────────────────
+// Used for mic input. Maintains a continuous beat clock driven by tempo
+// estimation. Note detections calibrate the clock rather than triggering it,
+// so the accompaniment doesn't have to wait for each mic detection.
+//
+// patience (beats): how long the clock waits with no detections before it
+// starts decelerating. Higher = more forgiving for beginners.
+class ScoreFollower {
+  constructor(rightHand, initialBps, { patience = 2.0 } = {}) {
+    this.score        = rightHand;         // [[pitches, beat], ...]
+    this._bps         = initialBps;
+    this._smoothedBps = initialBps;
+    this._clockBeat   = 0;                 // continuously advancing position
+    this._confirmedPos = 0;                // last confirmed note index (note-by-note)
+    this._patience    = patience;
+
+    this._timestamps     = [];             // [{time, beat}] — last N detections
+    this._lastDetectTime = null;
+    this._lastDetectBeat = null;
+
+    this._raf      = null;
+    this._prevTime = null;
+    this._running  = false;
+  }
+
+  start() {
+    this._running  = true;
+    this._prevTime = performance.now() / 1000;
+    this._scheduleTick();
+  }
+
+  stop() {
+    this._running = false;
+    if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; }
+  }
+
+  _scheduleTick() {
+    this._raf = requestAnimationFrame(() => this._clockTick());
+  }
+
+  _clockTick() {
+    if (!this._running) return;
+    const now = performance.now() / 1000;
+    const dt  = Math.min(0.1, now - this._prevTime);
+    this._prevTime = now;
+
+    // Speed factor: full speed normally, decelerates smoothly when the player
+    // goes quiet for longer than patience beats, stops at 2× patience.
+    let speed = 0;
+    if (this._lastDetectTime !== null) {
+      const silentBeats = (now - this._lastDetectTime) * this._bps;
+      if (silentBeats <= this._patience) {
+        speed = 1.0;
+      } else {
+        speed = Math.max(0, 1 - (silentBeats - this._patience) / this._patience);
+      }
+    }
+
+    this._clockBeat += this._bps * dt * speed;
+    this._scheduleTick();
+  }
+
+  // ── Note matching ──────────────────────────────────────────────────────────
+
+  // Fuzzy match for mic (±1 semitone on lead pitch).
+  onNoteFuzzy(midi) { return this._match(midi, true); }
+
+  // Exact match for MIDI / keyboard (not normally used in mic mode).
+  onNote(midi) { return this._match(midi, false); }
+
+  _match(midi, fuzzy) {
+    const now = performance.now() / 1000;
+
+    // Search window: 1 note behind confirmed position (handles latency),
+    // up to 4 ahead (lets beginners skip a note without derailing).
+    const lo = Math.max(0, this._confirmedPos - 1);
+    const hi = Math.min(this.score.length, this._confirmedPos + 4);
+
+    let matchIdx = -1;
+    for (let i = lo; i < hi; i++) {
+      const target = leadPitchFromEvent(this.score[i]);
+      const hit = fuzzy
+        ? Math.abs(target - midi) <= 1
+        : eventPitches(this.score[i]).includes(midi);
+      if (hit) { matchIdx = i; break; }
+    }
+    if (matchIdx === -1) return null;
+
+    const matchedBeat = this.score[matchIdx][1];
+    this._confirmedPos = matchIdx + 1;
+
+    // Nudge clock toward the matched note's score position.
+    // Only correct forward (never backwards) — if the clock ran ahead, let it
+    // stay there; the player will catch up. Backward corrections make the
+    // accompaniment stutter or repeat notes.
+    const err = matchedBeat - this._clockBeat;
+    if (err > 0) this._clockBeat += err * 0.6;
+    // Guarantee the clock is at least at the matched beat (never behind).
+    if (this._clockBeat < matchedBeat) this._clockBeat = matchedBeat;
+
+    this._lastDetectTime = now;
+    this._lastDetectBeat = matchedBeat;
+    this._timestamps.push({ time: now, beat: matchedBeat });
+    if (this._timestamps.length > 8) this._timestamps.shift();
+
+    // Update tempo from median inter-note rate (robust to variable mic lag).
+    this._updateBps(this._medianBps());
+
+    return matchedBeat;
+  }
+
+  _updateBps(candidate) {
+    const minBps = 35 / 60, maxBps = 300 / 60;
+    if (candidate < minBps || candidate > maxBps) return;
+    const maxRise = Math.min(maxBps, this._smoothedBps * 1.22 + 0.05);
+    const maxDrop = Math.max(minBps, this._smoothedBps * 0.78 - 0.03);
+    const clamped = Math.max(maxDrop, Math.min(maxRise, candidate));
+    this._smoothedBps = this._smoothedBps * 0.72 + clamped * 0.28;
+    this._bps         = this._smoothedBps;
+  }
+
+  // ── BPS estimation via median inter-note rate ─────────────────────────────
+  // Mirrors Tracker.bps() to avoid noise from variable mic detection lag.
+  _medianBps() {
+    const ts = this._timestamps;
+    if (ts.length < 2) return this._smoothedBps;
+    const rates = [];
+    for (let i = 1; i < ts.length; i++) {
+      const dt = ts[i].time - ts[i-1].time;
+      const db = ts[i].beat - ts[i-1].beat;
+      if (dt >= 0.08 && dt <= TEMPO_PAUSE_IGNORE_SEC && db > 0) rates.push(db / dt);
+    }
+    if (!rates.length) return this._smoothedBps;
+    rates.sort((a, b) => a - b);
+    return rates[Math.floor(rates.length / 2)];
+  }
+
+  // ── Public API ─────────────────────────────────────────────────────────────
+
+  get beat()       { return this._clockBeat; }
+  get position()   { return this._confirmedPos; }
+  get timestamps() { return this._timestamps; }
+  get started()    { return this._lastDetectTime !== null; }
+
+  bps()        { return this._smoothedBps; }
+  isFinished() { return this._confirmedPos >= this.score.length; }
+  progress()   { return this.score.length ? this._confirmedPos / this.score.length : 0; }
+}
+
 // ── Tracker ──────────────────────────────────────────────────────────────────
+// Used for keyboard and MIDI input (note-by-note, no continuous clock).
 class Tracker {
   constructor(rightHand, initialBps) {
     this.score      = rightHand;       // [[pitch, beat], ...]
@@ -430,7 +580,10 @@ class Tracker {
 
   _advance(i) {
     const now = performance.now() / 1000;
-    if (now - this._lastAdvanceTime < 0.06) return null;
+    // 30ms cooldown: prevents double-fires while still allowing 32nd notes at
+    // fast tempos (32nd note at 120 BPM = 62ms; at 180 BPM = 42ms).
+    // MIDI dedup in handleMidiNote (70ms same-pitch guard) handles repeated keys.
+    if (now - this._lastAdvanceTime < 0.03) return null;
     this._lastAdvanceTime = now;
     this._pendingChord.clear();
     this._pendingPosition = -1;
@@ -475,20 +628,20 @@ class Tracker {
 
 // ── Accompanist ──────────────────────────────────────────────────────────────
 class Accompanist {
-  constructor(leftHand, rightHand, initialBps, leftInstruments = []) {
-    // leftInstruments: array of instrument names parallel to the non-selected parts
-    // Each event gets the instrument of the source part it came from.
-    // Since getLeftHand() merges parts in order, we track that here.
-    this.events    = [...leftHand].sort((a,b) => a[1]-b[1]); // [[pitches,beat],...]
+  constructor(leftHand, rightHand, initialBps, leftInstruments = [], follower = null) {
+    // follower: a ScoreFollower instance (mic mode). When provided, _currentBeat()
+    // reads from it directly so the accompaniment decelerates with the clock.
+    this.events       = [...leftHand].sort((a,b) => a[1]-b[1]); // [[pitches,beat],...]
     this._instruments = leftInstruments;
-    this.rhBeats   = [...new Set(rightHand.map(n=>n[1]))].sort((a,b)=>a-b);
-    this._bps      = initialBps;
-    this._syncBeat = 0;
-    this._syncTime = null;   // null = waiting for first RH note
-    this._nextSync = this.rhBeats[0] ?? Infinity;
-    this._lhIdx    = 0;
-    this._running  = false;
-    this._raf      = null;
+    this._follower    = follower;
+    this.rhBeats      = [...new Set(rightHand.map(n=>n[1]))].sort((a,b)=>a-b);
+    this._bps         = initialBps;
+    this._syncBeat    = 0;
+    this._syncTime    = null;   // null = waiting for first RH note
+    this._nextSync    = this.rhBeats[0] ?? Infinity;
+    this._lhIdx       = 0;
+    this._running     = false;
+    this._raf         = null;
   }
 
   start() {
@@ -502,7 +655,15 @@ class Accompanist {
   }
 
   onRhNote(beat, bps) {
-    this._bps      = bps;
+    this._bps = bps;
+
+    if (this._follower) {
+      // Follower mode: the Accompanist clock is driven by ScoreFollower, so
+      // _syncTime/_syncBeat/_nextSync are irrelevant. Only update _bps (done
+      // above) and leave _lhIdx alone — the continuous clock already manages it.
+      return;
+    }
+
     this._syncBeat = beat;
     // Bias the accompaniment clock slightly ahead to compensate for browser
     // output latency that is still audible even with wired MIDI input.
@@ -511,9 +672,32 @@ class Accompanist {
     // Skip LH events now in the past
     while (this._lhIdx < this.events.length && this.events[this._lhIdx][1] < beat - 0.08)
       this._lhIdx++;
+
+    // Fire same-beat LH notes immediately — don't wait for the next rAF tick
+    // (which could be up to 16ms later). This is the biggest source of
+    // perceived lag in MIDI/keyboard mode.
+    this._drainNow();
+  }
+
+  // Play all LH events that are currently due, synchronously.
+  // Called both from onRhNote (immediate) and from _tick() (continuous streaming).
+  _drainNow() {
+    const current = this._currentBeat();
+    let burst = 0;
+    while (this._lhIdx < this.events.length && burst < 8) {
+      const [pitches, beat] = this.events[this._lhIdx];
+      if (!(beat < this._nextSync - 0.01 && current >= beat - 0.005)) break;
+      playChord(pitches, 0.5, this._instruments[0] || 'piano');
+      this._lhIdx++;
+      burst++;
+    }
   }
 
   _currentBeat() {
+    // Mic / follower mode: pull directly from ScoreFollower's continuous clock.
+    // This means the accompaniment decelerates automatically when the player
+    // pauses — no extra wiring needed.
+    if (this._follower) return this._follower.beat;
     if (this._syncTime === null) return 0;
     return this._syncBeat + (performance.now()/1000 - this._syncTime) * this._bps;
   }
@@ -521,18 +705,27 @@ class Accompanist {
   _tick() {
     if (!this._running) return;
 
-    if (this._syncTime !== null && this._lhIdx < this.events.length) {
+    // Process up to 4 pending LH events per frame so the accompaniment can
+    // catch up quickly after a pause without playing them one-per-16ms-frame.
+    const current = this._currentBeat();
+    let burst = 0;
+    while (this._lhIdx < this.events.length && burst < 4) {
       const [pitches, beat] = this.events[this._lhIdx];
 
-      // Pause before next RH sync point
-      if (beat < this._nextSync - 0.01) {
-        const current = this._currentBeat();
-        if (current >= beat - 0.005) {
-          const instr = this._instruments[0] || 'piano';
-          playChord(pitches, 0.5, instr);
-          this._lhIdx++;
-        }
-      }
+      // Follower mode (mic): play freely whenever the clock reaches the note,
+      // but only after the first detection (started = true). This prevents
+      // beat-0 LH notes from firing before the player has begun.
+      // Strict mode (MIDI/keyboard): pause at the next RH sync point so the
+      // accompaniment doesn't run past where the soloist hasn't played yet.
+      const ready = this._follower
+        ? this._follower.started && current >= beat - 0.005
+        : this._syncTime !== null && beat < this._nextSync - 0.01 && current >= beat - 0.005;
+
+      if (!ready) break;
+      const instr = this._instruments[0] || 'piano';
+      playChord(pitches, 0.5, instr);
+      this._lhIdx++;
+      burst++;
     }
 
     this._raf = requestAnimationFrame(() => this._tick());
@@ -570,7 +763,16 @@ async function api(path, opts) {
   const headers = { ...((opts && opts.headers) || {}) };
   const request = { cache: 'no-store', ...(opts || {}), headers };
   const r = await fetch(path, request);
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    let message = '';
+    try {
+      const payload = await r.json();
+      message = payload?.detail || payload?.message || '';
+    } catch {
+      message = await r.text();
+    }
+    throw new Error(message || `Request failed (${r.status})`);
+  }
   return r.json();
 }
 
@@ -584,11 +786,31 @@ function setAuthStatus(message, tone = 'muted') {
   const el = document.getElementById('auth-status');
   if (!el) return;
   el.textContent = message || '';
-  el.style.color = tone === 'error'
-    ? '#e05c5c'
-    : tone === 'success'
-      ? 'var(--success)'
-      : 'var(--muted)';
+  el.classList.remove('error', 'success', 'info');
+  if (tone !== 'muted') el.classList.add(tone);
+  el.style.color = '';
+}
+
+function normalizeUsername(value) {
+  return (value || '').trim();
+}
+
+function validateAuthFields(username, password, mode = 'login') {
+  if (!username) return 'Enter a username.';
+  if (!/^[A-Za-z0-9_]{3,32}$/.test(username)) {
+    return 'Username must be 3-32 characters using letters, numbers, or underscore.';
+  }
+  if (!password) return mode === 'signup' ? 'Create a password.' : 'Enter your password.';
+  if (password.length < 4) return 'Password must be at least 4 characters.';
+  return '';
+}
+
+function passwordFriendlyError(message, mode = 'login') {
+  const raw = (message || '').trim();
+  if (!raw) return mode === 'signup' ? 'Could not create your account.' : 'Could not sign you in.';
+  if (raw === 'Invalid username or password.') return 'That username or password does not match.';
+  if (raw === 'Username already exists.') return 'That username is already taken.';
+  return raw;
 }
 
 function updateAuthUI() {
@@ -609,7 +831,14 @@ function updateAuthUI() {
   loggedIn.style.display = isLoggedIn ? 'block' : 'none';
   addPieceBtn.disabled = !isLoggedIn;
   if (isLoggedIn) {
-    document.getElementById('auth-user-email').textContent = _authUser.email || _authUser.username || 'Signed in';
+    document.getElementById('auth-user-email').textContent = _authUser.username || 'Signed in';
+    const meta = document.getElementById('auth-user-meta');
+    if (meta) {
+      const pieceCount = Array.isArray(state.serverScores) ? state.serverScores.length : 0;
+      meta.textContent = pieceCount === 0
+        ? 'No pieces yet. Add one to start your library.'
+        : `${pieceCount} piece${pieceCount === 1 ? '' : 's'} in your library`;
+    }
     setAuthStatus('');
   } else {
     document.getElementById('score-grid').innerHTML = '<div class="score-preview-empty">Sign in to load your score library.</div>';
@@ -631,9 +860,14 @@ async function initAppConfig() {
 }
 
 async function signIn() {
-  const username = document.getElementById('auth-email').value.trim();
+  const username = normalizeUsername(document.getElementById('auth-email').value);
   const password = document.getElementById('auth-password').value;
   if (!_appConfig.auth_enabled) return;
+  const validationError = validateAuthFields(username, password, 'login');
+  if (validationError) {
+    setAuthStatus(validationError, 'error');
+    return;
+  }
   setAuthStatus('Signing in...');
   try {
     const result = await api('/api/login', {
@@ -644,17 +878,22 @@ async function signIn() {
     _authUser = result.user || null;
     updateAuthUI();
     await loadScoreList();
-    setAuthStatus('Signed in.', 'success');
+    setAuthStatus(`Signed in as ${username}.`, 'success');
   } catch (error) {
-    setAuthStatus(error.message || 'Sign in failed.', 'error');
+    setAuthStatus(passwordFriendlyError(error.message, 'login'), 'error');
     return;
   }
 }
 
 async function signUp() {
   if (!_appConfig.auth_enabled) return;
-  const username = document.getElementById('auth-email').value.trim();
+  const username = normalizeUsername(document.getElementById('auth-email').value);
   const password = document.getElementById('auth-password').value;
+  const validationError = validateAuthFields(username, password, 'signup');
+  if (validationError) {
+    setAuthStatus(validationError, 'error');
+    return;
+  }
   setAuthStatus('Creating account...');
   try {
     const result = await api('/api/signup', {
@@ -665,9 +904,9 @@ async function signUp() {
     _authUser = result.user || null;
     updateAuthUI();
     await loadScoreList();
-    setAuthStatus('Account created.', 'success');
+    setAuthStatus(`Account created. Signed in as ${username}.`, 'success');
   } catch (error) {
-    setAuthStatus(error.message || 'Sign up failed.', 'error');
+    setAuthStatus(passwordFriendlyError(error.message, 'signup'), 'error');
     return;
   }
 }
@@ -684,6 +923,14 @@ async function signOut() {
 window.signIn = signIn;
 window.signUp = signUp;
 window.signOut = signOut;
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const target = e.target;
+  if (!target || (target.id !== 'auth-email' && target.id !== 'auth-password')) return;
+  e.preventDefault();
+  signIn();
+});
 
 function loadPersonalScoreLibrary() {
   if (_appConfig.auth_enabled) return [...(state.serverScores || [])];
@@ -841,6 +1088,31 @@ function sanitizeSheetFrame(frame) {
   }
 }
 
+let _musicXmlDisplay = null;
+
+async function renderMusicXmlFallback(xmlText) {
+  const host = document.getElementById('sheet-musicxml-fallback');
+  if (!host || !window.opensheetmusicdisplay?.OpenSheetMusicDisplay) return false;
+  host.innerHTML = '';
+  host.style.display = 'block';
+  try {
+    _musicXmlDisplay = new window.opensheetmusicdisplay.OpenSheetMusicDisplay(host, {
+      autoResize: true,
+      drawTitle: false,
+      drawPartNames: true,
+      backend: 'svg',
+    });
+    await _musicXmlDisplay.load(xmlText);
+    _musicXmlDisplay.render();
+    return true;
+  } catch (error) {
+    console.warn('MusicXML fallback render failed:', error);
+    host.innerHTML = '';
+    host.style.display = 'none';
+    return false;
+  }
+}
+
 // ── Score list screen ─────────────────────────────────────────────────────────
 async function loadScoreList() {
   if (_appConfig.auth_enabled && !_authUser) {
@@ -890,6 +1162,7 @@ async function loadScoreList() {
     sanitizeSheetFrame(frame);
   });
   requestAnimationFrame(() => resizeScorePreviews());
+  updateAuthUI();
 }
 
 function formatName(name) {
@@ -938,6 +1211,9 @@ async function openScore(name) {
   // Sheet music
   const frame = document.getElementById('sheet-frame');
   const placeholder = document.getElementById('sheet-placeholder');
+  const musicXmlFallback = document.getElementById('sheet-musicxml-fallback');
+  musicXmlFallback.style.display = 'none';
+  musicXmlFallback.innerHTML = '';
   if (data.has_sheet) {
     frame.onload = () => {
       sanitizeSheetFrame(frame);
@@ -949,7 +1225,13 @@ async function openScore(name) {
   } else {
     frame.onload = null;
     frame.style.display = 'none';
-    placeholder.style.display = 'block';
+    const renderedFallback = data.musicxml_source
+      ? await renderMusicXmlFallback(data.musicxml_source)
+      : false;
+    placeholder.style.display = renderedFallback ? 'none' : 'block';
+    placeholder.textContent = renderedFallback
+      ? ''
+      : 'Sheet preview unavailable for this score.';
     clearSheetHighlight();
   }
 
@@ -1151,11 +1433,18 @@ function laneCodeForMidi(midi) {
 
 function currentGuideBeat(rightHand) {
   if (!rightHand.length) return 0;
+
+  // Mic mode: ScoreFollower owns the clock — use it directly.
+  // The clock already decelerates on silence, so no cap needed.
+  if (state.tracker instanceof ScoreFollower) {
+    return state.tracker.beat;
+  }
+
+  // MIDI/keyboard: interpolate from last detected note, capped at next expected beat.
   const trackerPos = state.tracker?.position ?? 0;
   const expectedBeat = rightHand[trackerPos]?.[1]
     ?? rightHand[rightHand.length - 1]?.[1]
     ?? 0;
-
   const last = state.tracker?.timestamps?.[state.tracker.timestamps.length - 1];
   const anchorBeat = last?.beat ?? _noteHighwayStartBeat ?? 0;
   const anchorTime = last?.time ?? _noteHighwayStartTime;
@@ -1327,8 +1616,16 @@ async function startPlaying() {
     return;
   }
 
-  state.tracker     = new Tracker(right, initialBps);
-  state.accompanist = new Accompanist(left, right, initialBps, leftInstruments);
+  if (_inputMode === 'mic') {
+    state.tracker = new ScoreFollower(right, initialBps, { patience: _patienceBeats });
+    state.tracker.start();
+  } else {
+    state.tracker = new Tracker(right, initialBps);
+  }
+  state.accompanist = new Accompanist(
+    left, right, initialBps, leftInstruments,
+    state.tracker instanceof ScoreFollower ? state.tracker : null
+  );
   state.accompanist.start();
   state.playing = true;
   _noteHighwayStartTime = performance.now() / 1000;
@@ -1348,6 +1645,7 @@ async function startPlaying() {
 
 function stopPlaying() {
   if (state.accompanist) state.accompanist.stop();
+  if (state.tracker instanceof ScoreFollower) state.tracker.stop();
   _stopMic();
   stopNoteHighwayLoop();
   state.playing = false;
@@ -1368,6 +1666,8 @@ function handleNoteMic(midi) {
     _noteHighwayStartBeat = beat;
     _noteHighwayStartTime = performance.now() / 1000;
     _noteHighwayBps = bps;
+    // In mic mode the Accompanist already follows the ScoreFollower clock,
+    // but we still call onRhNote so it corrects its skip-past-old-events logic.
     state.accompanist.onRhNote(beat, bps);
     updateSheetHighlight(beat);
     document.getElementById('beat-val').textContent  = beat.toFixed(1);
@@ -1438,6 +1738,15 @@ let _inputMode        = 'keyboard';
 let _pitchDetector    = null;
 let _selectedMicId    = null;
 let _selectedSpeakerId = null;
+let _patienceBeats    = 2.0;   // default: Beginner
+
+function setPatiencePreset(beats, btnEl) {
+  _patienceBeats = beats;
+  document.querySelectorAll('.patience-btn').forEach(b => b.classList.remove('active'));
+  if (btnEl) btnEl.classList.add('active');
+  // Live-update a running follower without requiring stop/start.
+  if (state.tracker instanceof ScoreFollower) state.tracker._patience = beats;
+}
 
 function setInputMode(mode) {
   _inputMode = mode;
@@ -1750,7 +2059,7 @@ async function importScoreFiles() {
   const files = [...(fileInput?.files || [])];
 
   if (!files.length) {
-    setImportStatus('Choose a PDF or one/more page images first.', 'error');
+    setImportStatus('Choose a MusicXML file, one PDF, or one/more page images first.', 'error');
     return;
   }
 
@@ -1759,7 +2068,8 @@ async function importScoreFiles() {
   form.append('name', (nameInput?.value || '').trim());
 
   button.disabled = true;
-  setImportStatus('Running Audiveris and converting the score…');
+  const isDirectMusicXml = files.length === 1 && /\.(xml|mxl|musicxml)$/i.test(files[0].name || '');
+  setImportStatus(isDirectMusicXml ? 'Importing MusicXML and building the score…' : 'Running Audiveris and converting the score…');
 
   try {
     const response = await fetch('/api/import', { method: 'POST', body: form });
@@ -1768,7 +2078,12 @@ async function importScoreFiles() {
       throw new Error(payload.detail || 'Import failed');
     }
     addScoreToLibrary(payload.name);
-    setImportStatus(`Imported ${formatName(payload.name)}.`, 'success');
+    setImportStatus(
+      payload.has_sheet
+        ? `Imported ${formatName(payload.name)}.`
+        : `Imported ${formatName(payload.name)} without sheet preview.`,
+      'success'
+    );
     await loadScoreList();
     setTimeout(() => closeAddModal(), 350);
   } catch (error) {
