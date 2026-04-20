@@ -628,6 +628,11 @@ class Accompanist {
   }
 
   start() {
+    const hasPrelude = this.events.some((event) => event[1] < this._nextSync - 0.01);
+    if (hasPrelude) {
+      this._syncBeat = 0;
+      this._syncTime = performance.now() / 1000 - _accompanimentLatencyCompSec;
+    }
     this._running = true;
     this._tick();
   }
@@ -635,6 +640,21 @@ class Accompanist {
   stop() {
     this._running = false;
     if (this._raf) cancelAnimationFrame(this._raf);
+  }
+
+  pause() {
+    this._running = false;
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._raf = null;
+  }
+
+  resume(beat, bps) {
+    this._bps = bps;
+    this._syncBeat = beat;
+    this._syncTime = performance.now() / 1000 - _accompanimentLatencyCompSec;
+    this._nextSync = this.rhBeats.find((b) => b > beat + 0.01) ?? Infinity;
+    this._running = true;
+    this._tick();
   }
 
   onRhNote(beat, bps) {
@@ -693,6 +713,11 @@ let state = {
   partInstruments:  {},  // partIndex → instrument name override
   scoreGridColumns: 3,
   keyboardLayoutMode: 'full',
+  paused:           false,
+  pausedBeat:       0,
+  pausedBps:        1,
+  sheetView: { zoom: 1.0, rotation: 0 },
+  sheetSource: null, // { name, hasSheet, musicXml }
 };
 
 let _noteHighwayRaf = null;
@@ -707,6 +732,7 @@ const SCORE_LIBRARY_KEY = 'accompy_score_library_v1';
 const SCORE_LIBRARY_INIT_KEY = 'accompy_score_library_initialized_v1';
 let _appConfig = { supabase_enabled: false, auth_enabled: false };
 let _authUser = null;
+const OPENING_GUIDE_LEAD_BEATS = 0.75;
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 async function api(path, opts) {
@@ -1021,6 +1047,17 @@ function sanitizeSheetFrame(frame) {
   } else {
     doc.body?.classList.remove('accompy-dark-sheet');
   }
+  applySheetFrameZoom(frame, state.sheetView?.zoom || 1);
+}
+
+function applySheetFrameZoom(frame, zoom = 1) {
+  const doc = frame?.contentDocument;
+  if (!doc?.documentElement) return;
+  const normalized = Math.max(0.4, Math.min(2.5, zoom || 1));
+  doc.documentElement.style.zoom = String(normalized);
+  if (doc.body) {
+    doc.body.style.transformOrigin = 'top left';
+  }
 }
 
 // ── Score list screen ─────────────────────────────────────────────────────────
@@ -1103,6 +1140,96 @@ async function renderMusicXmlFallback(xmlText) {
   }
 }
 
+// ── Sheet viewer toolbar ─────────────────────────────────────────────────────
+function applySheetView() {
+  const wrap = document.getElementById('sheet-content-wrap');
+  const frame = document.getElementById('sheet-frame');
+  const fallback = document.getElementById('sheet-musicxml-fallback');
+  const label = document.getElementById('sheet-zoom-label');
+  if (!wrap) return;
+  const { zoom, rotation } = state.sheetView;
+
+  const frameVisible = frame && frame.style.display !== 'none';
+  const fallbackVisible = fallback && fallback.style.display !== 'none';
+
+  // OSMD uses native zoom so the SVG re-renders at the requested size
+  // instead of being bitmap-scaled. This also avoids resize-feedback loops.
+  if (fallbackVisible && _musicXmlDisplay) {
+    try {
+      _musicXmlDisplay.Zoom = zoom;
+      _musicXmlDisplay.render();
+    } catch (e) { console.warn('OSMD zoom failed', e); }
+  }
+  if (frameVisible) {
+    applySheetFrameZoom(frame, zoom);
+  }
+
+  wrap.style.transformOrigin = 'top left';
+  const parts = [];
+  if (rotation) parts.push(`rotate(${rotation}deg)`);
+  wrap.style.transform = parts.join(' ');
+
+  if (label) label.textContent = `${Math.round(zoom * 100)}%`;
+}
+
+function sheetZoom(delta) {
+  const next = Math.max(0.4, Math.min(2.5, (state.sheetView.zoom || 1) + delta));
+  state.sheetView.zoom = Math.round(next * 100) / 100;
+  applySheetView();
+}
+
+function sheetRotate() {
+  state.sheetView.rotation = (state.sheetView.rotation + 90) % 360;
+  applySheetView();
+}
+
+function sheetResetView() {
+  state.sheetView = { zoom: 1.0, rotation: 0 };
+  applySheetView();
+}
+
+function resetSheetView() {
+  state.sheetView = { zoom: 1.0, rotation: 0 };
+  applySheetView();
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function sheetDownload() {
+  const src = state.sheetSource;
+  if (!src || !src.name) {
+    alert('Open a score first.');
+    return;
+  }
+  if (src.hasSheet) {
+    try {
+      const resp = await fetch(`/api/scores/${encodeURIComponent(src.name)}/sheet`);
+      const html = await resp.text();
+      triggerDownload(new Blob([html], { type: 'text/html' }), `${src.name}.sheet.html`);
+    } catch (err) {
+      alert(`Download failed: ${err}`);
+    }
+    return;
+  }
+  if (src.musicXml) {
+    triggerDownload(
+      new Blob([src.musicXml], { type: 'application/vnd.recordare.musicxml+xml' }),
+      `${src.name}.musicxml`
+    );
+    return;
+  }
+  alert('No sheet source available to download.');
+}
+
 // ── Play screen ───────────────────────────────────────────────────────────────
 async function fetchScore(name) {
   const scope = _appConfig.auth_enabled
@@ -1148,6 +1275,8 @@ async function openScore(name) {
   const musicXmlFallback = document.getElementById('sheet-musicxml-fallback');
   musicXmlFallback.style.display = 'none';
   musicXmlFallback.innerHTML = '';
+  state.sheetSource = { name, hasSheet: !!data.has_sheet, musicXml: data.musicxml_source || null };
+  resetSheetView();
   if (data.has_sheet) {
     frame.onload = () => {
       sanitizeSheetFrame(frame);
@@ -1199,7 +1328,12 @@ async function openScore(name) {
   syncExpectedMicNote();
   preloadCurrentScoreInstruments();
   showScreen('play-screen');
+  state.paused = false;
+  state.pausedBeat = 0;
+  state.pausedBps = 1;
   document.getElementById('start-btn').disabled = false;
+  document.getElementById('start-btn').textContent = '▶ Start';
+  document.getElementById('start-btn').classList.add('btn-primary');
   document.getElementById('stop-btn').disabled  = true;
 }
 
@@ -1273,11 +1407,12 @@ function initializeSheetHighlighting() {
     style.id = 'accompy-measure-highlight-style';
     style.textContent = `
       .accompy-measure-highlight {
-        fill: rgba(220, 40, 40, 0.12);
-        stroke: rgba(220, 40, 40, 0.95);
-        stroke-width: 24px;
-        rx: 20px;
-        ry: 20px;
+        fill: rgba(98, 255, 140, 0.96);
+        stroke: rgba(190, 255, 205, 0.95);
+        stroke-width: 4px;
+        rx: 10px;
+        ry: 10px;
+        filter: drop-shadow(0 0 10px rgba(98, 255, 140, 0.65));
         pointer-events: none;
       }
     `;
@@ -1309,7 +1444,7 @@ function measureIndexForBeat(beat) {
 function updateSheetHighlight(beat) {
   if (!_sheetMeasureEls.length) return;
   const idx = measureIndexForBeat(beat);
-  if (idx < 0 || idx === _sheetHighlightIndex) return;
+  if (idx < 0) return;
 
   const measureEl = _sheetMeasureEls[idx];
   if (!measureEl) return;
@@ -1317,19 +1452,36 @@ function updateSheetHighlight(beat) {
   const overlayRoot = doc.querySelector('svg.definition-scale g.page-margin') || measureEl.parentNode;
   if (!overlayRoot) return;
 
-  _sheetHighlightRect?.remove();
   const bbox = measureEl.getBBox();
-  const rect = doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  rect.setAttribute('class', 'accompy-measure-highlight');
-  rect.setAttribute('x', String(bbox.x - 36));
-  rect.setAttribute('y', String(bbox.y - 28));
-  rect.setAttribute('width', String(bbox.width + 72));
-  rect.setAttribute('height', String(bbox.height + 56));
-  measureEl.insertBefore(rect, measureEl.firstChild);
+  const starts = state.current?.measure_beats || [];
+  const measureStart = starts[idx] ?? 0;
+  const nextStart = starts[idx + 1];
+  const previousSpan = idx > 0 ? ((starts[idx] ?? 0) - (starts[idx - 1] ?? 0)) : 4;
+  const measureSpan = Math.max(0.25, (nextStart ?? (measureStart + previousSpan || 4)) - measureStart);
+  const progress = Math.max(0, Math.min(1, (beat - measureStart) / measureSpan));
+  const barWidth = 14;
+  const minX = bbox.x - 7;
+  const maxX = bbox.x + bbox.width - 7;
+  const x = minX + (maxX - minX) * progress;
+  const y = bbox.y - 18;
+  const height = bbox.height + 36;
 
-  _sheetHighlightRect = rect;
-  _sheetHighlightIndex = idx;
-  measureEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (!_sheetHighlightRect || idx !== _sheetHighlightIndex) {
+    _sheetHighlightRect?.remove();
+    const rect = doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('class', 'accompy-measure-highlight');
+    rect.setAttribute('width', String(barWidth));
+    rect.setAttribute('height', String(height));
+    overlayRoot.appendChild(rect);
+    _sheetHighlightRect = rect;
+    _sheetHighlightIndex = idx;
+    measureEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  _sheetHighlightRect.setAttribute('x', String(x));
+  _sheetHighlightRect.setAttribute('y', String(y));
+  _sheetHighlightRect.setAttribute('width', String(barWidth));
+  _sheetHighlightRect.setAttribute('height', String(height));
 }
 
 // ── Keyboard visualiser ───────────────────────────────────────────────────────
@@ -1376,11 +1528,13 @@ function currentGuideBeat(rightHand) {
   const expectedBeat = rightHand[trackerPos]?.[1]
     ?? rightHand[rightHand.length - 1]?.[1]
     ?? 0;
+  if (state.paused) return Math.min(state.pausedBeat ?? 0, expectedBeat);
 
   const last = state.tracker?.timestamps?.[state.tracker.timestamps.length - 1];
   const anchorBeat = last?.beat ?? _noteHighwayStartBeat ?? 0;
   const anchorTime = last?.time ?? _noteHighwayStartTime;
   const bps = state.tracker?.bps?.() ?? _noteHighwayBps ?? 1;
+  if (!last && trackerPos === 0) return Math.max(0, expectedBeat - OPENING_GUIDE_LEAD_BEATS);
   if (!anchorTime) return Math.min(anchorBeat, expectedBeat);
 
   const estimated = anchorBeat + Math.max(0, performance.now() / 1000 - anchorTime) * bps;
@@ -1399,49 +1553,126 @@ function ensureNoteHighway() {
   root.dataset.ready = '1';
 }
 
+const HIGHWAY_LOOK_BEHIND_BEATS = 0.5;
+const HIGHWAY_LOOK_AHEAD_BEATS = 4;
+const HIGHWAY_TOP_PADDING = 12;
+const HIGHWAY_MIN_BAR_HEIGHT = 3;
+const HIGHWAY_BAR_GAP_BEATS = 0.06;
+
+function resolveSustainBeats(event, nextBeat) {
+  const beat = event?.[1];
+  const gap = (Number.isFinite(nextBeat) && Number.isFinite(beat)) ? (nextBeat - beat) : Infinity;
+  const fallback = Number.isFinite(gap) ? gap : 0.75;
+  const raw = eventDuration(event, fallback);
+  const cap = Number.isFinite(gap) ? Math.max(0.02, gap - HIGHWAY_BAR_GAP_BEATS) : raw;
+  return Math.max(0.02, Math.min(raw, cap));
+}
+
+// bar's bottom = hit line at onset (delta=0); bar's height = sustain * pxPerBeat.
+function computeBarGeometry(delta, sustainBeats, laneHeight, hitLineTop, pixelsPerBeat) {
+  const bottomRaw = hitLineTop - delta * pixelsPerBeat;
+  const topRaw = bottomRaw - sustainBeats * pixelsPerBeat;
+  const top = Math.max(HIGHWAY_TOP_PADDING, topRaw);
+  const bottom = Math.min(laneHeight, bottomRaw);
+  if (bottom - top < HIGHWAY_MIN_BAR_HEIGHT) return null;
+  return { top, height: bottom - top };
+}
+
 function renderNoteHighway() {
   ensureNoteHighway();
   const root = document.getElementById('note-highway');
-  if (!root) return;
-
-  root.querySelectorAll('.note-bar').forEach((el) => el.remove());
 
   const rightHand = getRightHand();
+  const trackerPos = state.tracker?.position ?? 0;
+  const hasMatchedAnyNote = (state.tracker?.timestamps?.length ?? 0) > 0;
+  const openingOnlyCurrent = trackerPos === 0 && !hasMatchedAnyNote;
+  const currentBeat = rightHand.length ? currentGuideBeat(rightHand) : 0;
+  updateSheetHighlight(currentBeat);
+
+  renderFullKeyboardHighway(rightHand, trackerPos, currentBeat, openingOnlyCurrent);
+
+  if (!root) return;
+  root.querySelectorAll('.note-bar').forEach((el) => el.remove());
   if (!rightHand.length) return;
 
-  const trackerPos = state.tracker?.position ?? 0;
-  const currentBeat = currentGuideBeat(rightHand);
-  const lookBehind = 0.5;
-  const lookAhead = 4;
-  const laneHeight = 210;
-  const topPadding = 12;
-  const hitLineTop = laneHeight - 34;
-  const pixelsPerBeat = (hitLineTop - topPadding) / (lookAhead + lookBehind);
+  const firstLane = root.querySelector('.note-lane');
+  const hitLineEl = firstLane?.querySelector('.note-hit-line');
+  if (!firstLane || !hitLineEl) return;
+  const laneRect = firstLane.getBoundingClientRect();
+  const hitRect = hitLineEl.getBoundingClientRect();
+  if (!laneRect.height) return;
+  const laneHeight = laneRect.height;
+  const hitLineTop = hitRect.top - laneRect.top;
+  const pixelsPerBeat = (hitLineTop - HIGHWAY_TOP_PADDING) / HIGHWAY_LOOK_AHEAD_BEATS;
+
   const startIndex = Math.max(0, trackerPos - 1);
 
   for (let i = startIndex; i < rightHand.length; i++) {
     const event = rightHand[i];
+    if (openingOnlyCurrent && i !== trackerPos) continue;
     const beat = event?.[1];
-    const pitches = eventPitches(event);
     const delta = beat - currentBeat;
-    if (delta < -lookBehind) continue;
-    if (delta > lookAhead) break;
+    if (delta < -HIGHWAY_LOOK_BEHIND_BEATS) continue;
+    if (delta > HIGHWAY_LOOK_AHEAD_BEATS) break;
 
-    const t = (delta + lookBehind) / (lookAhead + lookBehind);
-    const top = Math.max(topPadding, (1 - t) * (hitLineTop - topPadding) + topPadding);
-    const sustainBeats = Math.max(0.25, eventDuration(event, (rightHand[i + 1]?.[1] ?? (beat + 0.75)) - beat));
-    const visualBeats = sustainBeats * 1.08 + 0.08;
-    const barHeight = Math.max(24, Math.min(hitLineTop - top + 24, visualBeats * pixelsPerBeat));
-    pitches.forEach((midi) => {
+    const sustainBeats = resolveSustainBeats(event, rightHand[i + 1]?.[1]);
+    const geom = computeBarGeometry(delta, sustainBeats, laneHeight, hitLineTop, pixelsPerBeat);
+    if (!geom) continue;
+
+    eventPitches(event).forEach((midi) => {
       const lane = laneCodeForMidi(midi);
       if (!lane) return;
       const laneEl = root.querySelector(`[data-lane="${lane.id}"]`);
       if (!laneEl) return;
       const bar = document.createElement('div');
       bar.className = `note-bar${lane.sharp ? ' sharp' : ''}${i === trackerPos ? ' current' : ''}`;
-      bar.style.top = `${Math.min(hitLineTop, top)}px`;
-      bar.style.height = `${i === trackerPos ? Math.max(24, barHeight) : barHeight}px`;
+      bar.style.top = `${geom.top}px`;
+      bar.style.height = `${geom.height}px`;
       laneEl.appendChild(bar);
+    });
+  }
+}
+
+function renderFullKeyboardHighway(rightHand, trackerPos, currentBeat, openingOnlyCurrent = false) {
+  const root = document.getElementById('full-note-highway');
+  const hitLineEl = root?.querySelector('.full-note-hit-line');
+  if (!root || !hitLineEl) return;
+
+  root.querySelectorAll('.full-note-bar').forEach((el) => el.remove());
+  if (!rightHand.length) return;
+
+  const rootRect = root.getBoundingClientRect();
+  const hitRect = hitLineEl.getBoundingClientRect();
+  if (!rootRect.width || !rootRect.height) return;
+  const laneHeight = rootRect.height;
+  const hitLineTop = hitRect.top - rootRect.top;
+  const pixelsPerBeat = (hitLineTop - HIGHWAY_TOP_PADDING) / HIGHWAY_LOOK_AHEAD_BEATS;
+
+  const startIndex = Math.max(0, trackerPos - 1);
+
+  for (let i = startIndex; i < rightHand.length; i++) {
+    const event = rightHand[i];
+    if (openingOnlyCurrent && i !== trackerPos) continue;
+    const beat = event?.[1];
+    const delta = beat - currentBeat;
+    if (delta < -HIGHWAY_LOOK_BEHIND_BEATS) continue;
+    if (delta > HIGHWAY_LOOK_AHEAD_BEATS) break;
+
+    const sustainBeats = resolveSustainBeats(event, rightHand[i + 1]?.[1]);
+    const geom = computeBarGeometry(delta, sustainBeats, laneHeight, hitLineTop, pixelsPerBeat);
+    if (!geom) continue;
+
+    eventPitches(event).forEach((midi) => {
+      const keyEl = document.getElementById(`refkey-${midi}`);
+      if (!keyEl) return;
+      const keyRect = keyEl.getBoundingClientRect();
+      const bar = document.createElement('div');
+      bar.className = `full-note-bar${isBlackKeyMidi(midi) ? ' sharp' : ''}${i === trackerPos ? ' current' : ''}`;
+      bar.style.left = `${Math.max(0, keyRect.left - rootRect.left + 2)}px`;
+      bar.style.width = `${Math.max(8, keyRect.width - 4)}px`;
+      bar.style.top = `${geom.top}px`;
+      bar.style.height = `${geom.height}px`;
+      root.appendChild(bar);
     });
   }
 }
@@ -1455,7 +1686,7 @@ function startNoteHighwayLoop() {
   stopNoteHighwayLoop();
   const tick = () => {
     renderNoteHighway();
-    if (state.playing) _noteHighwayRaf = requestAnimationFrame(tick);
+    if (state.playing && !state.paused) _noteHighwayRaf = requestAnimationFrame(tick);
   };
   tick();
 }
@@ -1553,6 +1784,13 @@ function updateNextKey(rightHand, position) {
 }
 
 // ── Start / Stop ──────────────────────────────────────────────────────────────
+function handleStartPause() {
+  if (!state.playing) {
+    return startPlaying();
+  }
+  return togglePausePlaying();
+}
+
 async function startPlaying() {
   audioCtx().resume(); // unblock audio on user gesture
 
@@ -1571,8 +1809,9 @@ async function startPlaying() {
   const instrumentsInUse = [getInstrumentForPart(sel), ...leftInstruments];
 
   const startBtn = document.getElementById('start-btn');
+  const stopBtn = document.getElementById('stop-btn');
   startBtn.disabled = true;
-  const originalLabel = startBtn.textContent;
+  const originalLabel = '▶ Start';
   startBtn.textContent = 'Loading...';
 
   try {
@@ -1586,7 +1825,10 @@ async function startPlaying() {
   );
   if (missingSampleInstrument) {
     startBtn.disabled = false;
-    document.getElementById('stop-btn').disabled = true;
+    stopBtn.disabled = true;
+    startBtn.textContent = '▶ Start';
+    startBtn.classList.add('btn-primary');
+    stopBtn.textContent = '■ End';
     alert(`Could not load the sampled ${missingSampleInstrument} instrument yet. Reload and try again.`);
     return;
   }
@@ -1595,12 +1837,18 @@ async function startPlaying() {
   state.accompanist = new Accompanist(left, right, initialBps, leftInstruments);
   state.accompanist.start();
   state.playing = true;
-  _noteHighwayStartTime = performance.now() / 1000;
+  state.paused = false;
+  state.pausedBeat = 0;
+  state.pausedBps = initialBps;
+  _noteHighwayStartTime = null;
   _noteHighwayStartBeat = 0;
   _noteHighwayBps = initialBps;
 
-  document.getElementById('start-btn').disabled = true;
-  document.getElementById('stop-btn').disabled  = false;
+  startBtn.disabled = false;
+  stopBtn.disabled  = false;
+  startBtn.textContent = '❚❚ Pause';
+  startBtn.classList.add('btn-primary');
+  stopBtn.textContent = '■ End';
 
   updateNextKey(right, 0);
   updateSheetHighlight(0);
@@ -1610,14 +1858,51 @@ async function startPlaying() {
   syncExpectedMicNote();
 }
 
+function togglePausePlaying() {
+  if (!state.playing || !state.tracker) return;
+
+  const startBtn = document.getElementById('start-btn');
+  if (!startBtn) return;
+
+  if (!state.paused) {
+    state.pausedBeat = currentGuideBeat(getRightHand());
+    state.pausedBps = state.tracker?.bps?.() ?? _noteHighwayBps ?? 1;
+    state.paused = true;
+    state.accompanist?.pause();
+    _stopMic();
+    stopNoteHighwayLoop();
+    updateSheetHighlight(state.pausedBeat);
+    renderNoteHighway();
+    startBtn.textContent = '▶ Resume';
+    return;
+  }
+
+  state.paused = false;
+  _noteHighwayStartBeat = state.pausedBeat ?? 0;
+  _noteHighwayStartTime = performance.now() / 1000;
+  _noteHighwayBps = state.pausedBps ?? (state.tracker?.bps?.() ?? 1);
+  state.accompanist?.resume(_noteHighwayStartBeat, _noteHighwayBps);
+  startBtn.textContent = '❚❚ Pause';
+  startNoteHighwayLoop();
+  if (_inputMode === 'mic') _startMic();
+  syncExpectedMicNote();
+}
+
 function stopPlaying() {
   if (state.accompanist) state.accompanist.stop();
   _stopMic();
   stopNoteHighwayLoop();
   state.playing = false;
+  state.paused = false;
+  state.pausedBeat = 0;
   _noteHighwayStartTime = null;
-  document.getElementById('start-btn').disabled = false;
-  document.getElementById('stop-btn').disabled  = true;
+  const startBtn = document.getElementById('start-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  startBtn.disabled = false;
+  stopBtn.disabled  = true;
+  startBtn.textContent = '▶ Start';
+  startBtn.classList.add('btn-primary');
+  stopBtn.textContent = '■ End';
   document.getElementById('next-note-display').textContent = '—';
   if (typeof _pitchDetector?.setExpectedMidi === 'function') _pitchDetector.setExpectedMidi(null);
   renderNoteHighway();
@@ -1625,7 +1910,7 @@ function stopPlaying() {
 
 // ── Note handler (called by keyboard and MIDI) ────────────────────────────────
 function handleNoteMic(midi) {
-  if (!state.playing || !state.tracker) return;
+  if (!state.playing || state.paused || !state.tracker) return;
   const beat = state.tracker.onNoteFuzzy(midi);
   if (beat !== null) {
     const bps = state.tracker.bps();
@@ -1645,7 +1930,7 @@ function handleNoteMic(midi) {
 }
 
 function handleNote(midi) {
-  if (!state.playing || !state.tracker) return;
+  if (!state.playing || state.paused || !state.tracker) return;
   const expectedEvent = getRightHand()[state.tracker.position] ?? getRightHand()[0];
   playNote(midi, 0.6, getInstrumentForPart(state.selectedPart ?? 0), {
     duration: expectedEvent ? eventDurationSeconds(expectedEvent, getInstrumentForPart(state.selectedPart ?? 0)) : undefined,
@@ -1677,7 +1962,7 @@ function handleNote(midi) {
 }
 
 function handleMidiNote(midi) {
-  if (!state.playing || !state.tracker) return;
+  if (!state.playing || state.paused || !state.tracker) return;
   const now = performance.now();
   if (_lastMidiPitch === midi && now - _lastMidiNoteTime < 70) return;
   _lastMidiPitch = midi;

@@ -113,8 +113,8 @@
           <span style="color:#555;font-size:.85rem">BPM</span>
         </div>
         <div class="tempo-actions">
-          <button id="start-btn" class="btn btn-primary" onclick="startPlaying()">▶ Start</button>
-          <button id="stop-btn" class="btn btn-danger" onclick="stopPlaying()" disabled>■ Stop</button>
+          <button id="start-btn" class="btn btn-primary" onclick="handleStartPause()">▶ Start</button>
+          <button id="stop-btn" class="btn btn-danger" onclick="stopPlaying()" disabled>■ End</button>
         </div>
       </div>
       <div class="latency-row">
@@ -128,6 +128,7 @@
 
   <div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width:0%"></div></div>
 
+  <div class="play-main">
   <!-- Keyboard layout -->
   <div class="keyboard-section" id="keyboard-section">
     <div class="keyboard-heading">
@@ -152,6 +153,9 @@
       </div>
       <div class="reference-keyboard-panel" id="full-keyboard-panel">
         <div class="reference-keyboard-title">Full piano board</div>
+        <div id="full-note-highway" class="full-note-highway">
+          <div class="full-note-hit-line"></div>
+        </div>
         <div class="reference-keyboard-shell" id="reference-keyboard-shell">
           <div class="reference-keyboard" id="reference-keyboard">
             <div id="full-kb-whites" class="reference-whites"></div>
@@ -164,13 +168,28 @@
 
   <!-- Sheet music -->
   <div class="sheet-section">
-    <h4>Sheet music</h4>
-    <iframe id="sheet-frame" style="display:none"></iframe>
-    <div id="sheet-placeholder" class="sheet-placeholder">
-      No sheet music available for this score.<br>
-      Re-run <code>convert_score.py</code> with verovio installed to generate it.
+    <div class="sheet-header">
+      <h4>Sheet music</h4>
+      <div class="sheet-toolbar">
+        <button class="sheet-tool-btn" onclick="sheetZoom(-0.1)" title="Zoom out" aria-label="Zoom out">−</button>
+        <span id="sheet-zoom-label" class="sheet-zoom-label">100%</span>
+        <button class="sheet-tool-btn" onclick="sheetZoom(0.1)" title="Zoom in" aria-label="Zoom in">+</button>
+        <button class="sheet-tool-btn" onclick="sheetResetView()" title="Reset view" aria-label="Reset view">⟲</button>
+        <button class="sheet-tool-btn" onclick="sheetRotate()" title="Rotate 90°" aria-label="Rotate">↻</button>
+        <button class="sheet-tool-btn" onclick="sheetDownload()" title="Download source" aria-label="Download">⬇</button>
+      </div>
     </div>
-    <div id="sheet-musicxml-fallback" class="sheet-musicxml-fallback" style="display:none"></div>
+    <div class="sheet-viewer" id="sheet-viewer">
+      <div class="sheet-content-wrap" id="sheet-content-wrap">
+        <iframe id="sheet-frame" style="display:none"></iframe>
+        <div id="sheet-musicxml-fallback" class="sheet-musicxml-fallback" style="display:none"></div>
+      </div>
+      <div id="sheet-placeholder" class="sheet-placeholder">
+        No sheet music available for this score.<br>
+        Re-run <code>convert_score.py</code> with verovio installed to generate it.
+      </div>
+    </div>
+  </div>
   </div>
 
   <div class="play-bottom">

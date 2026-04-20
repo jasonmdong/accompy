@@ -14,6 +14,8 @@ body {
   --accent-2: #9b8bff;
   --success: #5aaa60;
   --success-bg: #2a3a26;
+  --key-next: #39ff7a;
+  --key-next-2: #7dff9e;
 }
 
 body.light {
@@ -30,6 +32,8 @@ body.light {
   --accent-2: #7a6bea;
   --success: #2d8f47;
   --success-bg: #e4f1e1;
+  --key-next: #22e062;
+  --key-next-2: #5dff8c;
 }
 
 body {
@@ -165,6 +169,10 @@ header h1 span { color: var(--accent); }
 /* ── Screens ── */
 .screen { display: none; padding: 2rem; max-width: 960px; margin: 0 auto; }
 .screen.active { display: block; }
+#play-screen { max-width: min(1800px, calc(100% - 2rem)); }
+@media (min-width: 1400px) {
+  #play-screen { padding: 2rem 3rem; }
+}
 
 /* ── Score grid ── */
 .score-grid {
@@ -413,6 +421,22 @@ header h1 span { color: var(--accent); }
 }
 
 /* Keyboard viz */
+.play-main {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  align-items: start;
+}
+@media (min-width: 1100px) {
+  .play-main {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .play-main .keyboard-section,
+  .play-main .sheet-section {
+    margin-bottom: 0;
+  }
+}
 .keyboard-section { background: var(--panel); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem; }
 .mini-keyboard-panel {
   display: block;
@@ -549,16 +573,10 @@ header h1 span { color: var(--accent); }
   position: absolute;
   left: 8px;
   right: 8px;
-  min-height: 16px;
-  border-radius: 8px;
+  border-radius: 6px;
   background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 88%, white), var(--accent));
   border: 1px solid color-mix(in srgb, var(--accent) 52%, white);
   box-shadow: 0 6px 14px color-mix(in srgb, var(--accent) 28%, transparent);
-}
-.note-bar.sharp {
-  background: linear-gradient(to bottom, color-mix(in srgb, #ff8d57 88%, white), #ff8d57);
-  border-color: color-mix(in srgb, #ff8d57 55%, white);
-  box-shadow: 0 6px 14px rgba(255, 141, 87, 0.24);
 }
 .note-bar.current {
   background: linear-gradient(to bottom, color-mix(in srgb, var(--success) 90%, white), var(--success));
@@ -631,9 +649,9 @@ header h1 span { color: var(--accent); }
 }
 .kb-key-black .note-name { color: #b6bbc8; }
 .kb-key-black.active { background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 70%, #fff), var(--accent)); border-color: var(--accent-2); }
-.kb-key-black.next { background: linear-gradient(to bottom, color-mix(in srgb, var(--success) 76%, #fff), var(--success)); border-color: var(--success); }
+.kb-key-black.next { background: linear-gradient(to bottom, var(--key-next-2), var(--key-next)); border-color: var(--key-next); box-shadow: 0 0 14px color-mix(in srgb, var(--key-next) 65%, transparent), 0 0 28px color-mix(in srgb, var(--key-next) 35%, transparent); color: #052a10; }
 .kb-key-white.active { background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 28%, white), color-mix(in srgb, var(--accent) 18%, #ebe6d9)); border-color: var(--accent-2); }
-.kb-key-white.next { background: linear-gradient(to bottom, color-mix(in srgb, var(--success) 24%, white), color-mix(in srgb, var(--success) 18%, #ebe6d9)); border-color: var(--success); }
+.kb-key-white.next { background: linear-gradient(to bottom, var(--key-next-2), var(--key-next)); border-color: var(--key-next); box-shadow: 0 0 14px color-mix(in srgb, var(--key-next) 65%, transparent), 0 0 28px color-mix(in srgb, var(--key-next) 35%, transparent); color: #052a10; }
 .reference-keyboard-panel {
   margin-top: 1.2rem;
   padding-top: 1rem;
@@ -644,6 +662,46 @@ header h1 span { color: var(--accent); }
   font-weight: 700;
   color: var(--text);
   margin-bottom: .7rem;
+  padding-left: .9rem;
+}
+.full-note-highway {
+  position: relative;
+  height: 210px;
+  margin-bottom: .7rem;
+  border-radius: 10px;
+  overflow: hidden;
+  background:
+    linear-gradient(to bottom, color-mix(in srgb, var(--panel-alt) 92%, transparent), color-mix(in srgb, var(--surface) 80%, transparent)),
+    repeating-linear-gradient(
+      to right,
+      color-mix(in srgb, var(--border) 42%, transparent) 0,
+      color-mix(in srgb, var(--border) 42%, transparent) 1px,
+      transparent 1px,
+      transparent calc(100% / 52)
+    );
+  border: 1px solid var(--border);
+}
+.full-note-hit-line {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 8px;
+  height: 4px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--accent) 68%, white);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.full-note-bar {
+  position: absolute;
+  border-radius: 6px;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 88%, white), var(--accent));
+  border: 1px solid color-mix(in srgb, var(--accent) 52%, white);
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.full-note-bar.current {
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--success) 90%, white), var(--success));
+  border-color: color-mix(in srgb, var(--success) 55%, white);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--success) 30%, transparent);
 }
 .reference-keyboard-shell {
   overflow: hidden;
@@ -736,9 +794,12 @@ header h1 span { color: var(--accent); }
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-2) 35%, transparent);
 }
 .ref-key-white.next {
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--success) 24%, white), color-mix(in srgb, var(--success) 18%, #ebe6d9));
-  border-color: var(--success);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--success) 28%, transparent);
+  background: linear-gradient(to bottom, var(--key-next-2), var(--key-next));
+  border-color: var(--key-next);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--key-next) 50%, transparent),
+              0 0 14px color-mix(in srgb, var(--key-next) 65%, transparent),
+              0 0 28px color-mix(in srgb, var(--key-next) 35%, transparent);
+  color: #052a10;
 }
 .ref-key-black.active {
   background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 70%, #fff), var(--accent));
@@ -746,9 +807,11 @@ header h1 span { color: var(--accent); }
   box-shadow: 0 6px 14px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 .ref-key-black.next {
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--success) 76%, #fff), var(--success));
-  border-color: var(--success);
-  box-shadow: 0 6px 14px color-mix(in srgb, var(--success) 26%, transparent);
+  background: linear-gradient(to bottom, var(--key-next-2), var(--key-next));
+  border-color: var(--key-next);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--key-next) 65%, transparent),
+              0 0 28px color-mix(in srgb, var(--key-next) 40%, transparent);
+  color: #052a10;
 }
 
 /* Part picker */
@@ -782,7 +845,51 @@ header h1 span { color: var(--accent); }
 
 /* Sheet music */
 .sheet-section { background: var(--panel); border-radius: 10px; overflow: hidden; }
-.sheet-section h4 { font-size: .85rem; color: var(--muted); padding: .75rem 1.25rem; border-bottom: 1px solid var(--border); }
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .55rem 1rem .55rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.sheet-section h4 { font-size: .85rem; color: var(--muted); padding: 0; border: none; }
+.sheet-toolbar {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+}
+.sheet-tool-btn {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: .25rem .55rem;
+  font-size: .85rem;
+  cursor: pointer;
+  line-height: 1;
+  min-width: 28px;
+}
+.sheet-tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+.sheet-zoom-label {
+  font-size: .78rem;
+  color: var(--muted);
+  min-width: 3.1rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.sheet-viewer {
+  position: relative;
+  width: 100%;
+  height: 500px;
+  overflow: auto;
+  background: var(--panel-alt);
+}
+.sheet-content-wrap {
+  transform-origin: top left;
+  transition: transform .18s ease;
+  width: 100%;
+}
 #sheet-frame { width: 100%; height: 500px; border: none; display: block; background: #fff; }
 .sheet-placeholder { padding: 2rem; text-align: center; color: var(--muted-2); font-size: .9rem; }
 .sheet-musicxml-fallback {
@@ -790,8 +897,8 @@ header h1 span { color: var(--accent); }
   min-height: 500px;
   padding: 1rem;
   background: #fff;
-  border-radius: 10px;
-  overflow: auto;
+  border-radius: 0;
+  overflow: visible;
 }
 body.light .sheet-musicxml-fallback {
   background: #fff;
