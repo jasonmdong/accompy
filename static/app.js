@@ -11,6 +11,8 @@ const SIMPLE_KEY_LAYOUT = {
 };
 const SHARPABLE_CODES = new Set(['KeyA', 'KeyS', 'KeyJ', 'KeyK', 'KeyL']);
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const FULL_KEYBOARD_START = 21;
+const FULL_KEYBOARD_END = 108;
 const VISUAL_SLOTS = [
   { id: 'KeyA-natural', code: 'KeyA', sharp: false, noteName: 'C', keyLabel: 'a', kind: 'white', pitchClass: 0 },
   { id: 'KeyA-sharp',   code: 'KeyA', sharp: true,  noteName: 'C#', keyLabel: '⇧a', kind: 'black', pitchClass: 1 },
@@ -26,6 +28,7 @@ const VISUAL_SLOTS = [
   { id: 'Semicolon-natural', code: 'Semicolon', sharp: false, noteName: 'B', keyLabel: ';', kind: 'white', pitchClass: 11 },
 ];
 function pitchName(midi) { return NOTE_NAMES[midi % 12] + (Math.floor(midi/12)-1); }
+function isBlackKeyMidi(midi) { return [1, 3, 6, 8, 10].includes(midi % 12); }
 
 const INSTRUMENTS = ['piano','violin','viola','cello','strings','flute','clarinet','oboe','voice'];
 const INSTRUMENT_EMOJI = {
@@ -689,6 +692,7 @@ let state = {
   selectedPart:     0,
   partInstruments:  {},  // partIndex → instrument name override
   scoreGridColumns: 3,
+  keyboardLayoutMode: 'full',
 };
 
 let _noteHighwayRaf = null;
@@ -876,6 +880,45 @@ function setScoreGridColumns(value) {
   const columns = normalizedScoreGridColumns(value);
   applyScoreGridColumns(columns);
   localStorage.setItem('accompy_score_grid_columns', String(columns));
+}
+
+function applyKeyboardLayoutMode(mode) {
+  const normalized = mode === 'mini' ? 'mini' : 'full';
+  state.keyboardLayoutMode = normalized;
+  const section = document.getElementById('keyboard-section');
+  const miniPanel = document.getElementById('mini-keyboard-panel');
+  const mini = document.getElementById('mini-keyboard-layout');
+  const full = document.getElementById('full-keyboard-panel');
+  if (section) section.dataset.layoutMode = normalized;
+  if (miniPanel) {
+    miniPanel.classList.toggle('hidden', normalized !== 'mini');
+    miniPanel.style.display = normalized === 'mini' ? '' : 'none';
+    miniPanel.hidden = normalized !== 'mini';
+  }
+  if (mini) {
+    mini.classList.toggle('hidden', normalized !== 'mini');
+    mini.style.display = normalized === 'mini' ? '' : 'none';
+    mini.hidden = normalized !== 'mini';
+  }
+  if (full) {
+    full.classList.toggle('hidden', normalized !== 'full');
+    full.style.display = normalized === 'full' ? '' : 'none';
+    full.hidden = normalized !== 'full';
+  }
+  document.getElementById('keyboard-view-mini')?.classList.toggle('active', normalized === 'mini');
+  document.getElementById('keyboard-view-full')?.classList.toggle('active', normalized === 'full');
+}
+
+function setKeyboardLayoutMode(mode) {
+  applyKeyboardLayoutMode(mode);
+  localStorage.setItem('accompy_keyboard_layout_mode', state.keyboardLayoutMode);
+}
+
+window.setKeyboardLayoutMode = setKeyboardLayoutMode;
+
+function initKeyboardLayoutToggle() {
+  document.getElementById('keyboard-view-full')?.addEventListener('click', () => setKeyboardLayoutMode('full'));
+  document.getElementById('keyboard-view-mini')?.addEventListener('click', () => setKeyboardLayoutMode('mini'));
 }
 
 function setLatencyCompensation(value) {
@@ -1440,6 +1483,48 @@ function buildKeyboard(rightHand) {
       ` : ''}
     </div>`;
   }).join('');
+
+  buildReferenceKeyboard();
+  applyKeyboardLayoutMode(state.keyboardLayoutMode);
+}
+
+function buildReferenceKeyboard() {
+  const whiteRoot = document.getElementById('full-kb-whites');
+  const blackRoot = document.getElementById('full-kb-blacks');
+  if (!whiteRoot || !blackRoot) return;
+
+  let whiteIndex = 0;
+  const whiteKeys = [];
+  const blackKeys = [];
+
+  for (let midi = FULL_KEYBOARD_START; midi <= FULL_KEYBOARD_END; midi++) {
+    const label = pitchName(midi);
+    if (isBlackKeyMidi(midi)) {
+      blackKeys.push(
+        `<div class="ref-key ref-key-black" id="refkey-${midi}" data-midi="${midi}" style="left: calc(${whiteIndex} * var(--ref-white-width) - var(--ref-black-offset));">
+          <span class="ref-key-note">${label}</span>
+        </div>`
+      );
+    } else {
+      whiteKeys.push(
+        `<div class="ref-key ref-key-white" id="refkey-${midi}" data-midi="${midi}">
+          <span class="ref-key-note">${label}</span>
+        </div>`
+      );
+      whiteIndex += 1;
+    }
+  }
+
+  whiteRoot.innerHTML = whiteKeys.join('');
+  blackRoot.innerHTML = blackKeys.join('');
+}
+
+function scrollReferenceKeyboardToMidi(midi) {
+  if (state.keyboardLayoutMode !== 'full') return;
+  const shell = document.getElementById('reference-keyboard-shell');
+  const key = document.getElementById(`refkey-${midi}`);
+  if (!shell || !key) return;
+  key.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
 }
 
 function highlightKey(key, on) {
@@ -1448,7 +1533,7 @@ function highlightKey(key, on) {
 }
 
 function updateNextKey(rightHand, position) {
-  document.querySelectorAll('.kb-key.next, .kb-sharp.next')
+  document.querySelectorAll('.kb-key.next, .kb-sharp.next, .ref-key.next')
     .forEach(el => el.classList.remove('next'));
   if (position >= rightHand.length) {
     renderNoteHighway();
@@ -1459,8 +1544,10 @@ function updateNextKey(rightHand, position) {
   eventPitches(event).forEach((midi) => {
     const keyId = cueKeyIdForMidi(midi);
     if (keyId) document.getElementById(keyId)?.classList.add('next');
+    document.getElementById(`refkey-${midi}`)?.classList.add('next');
   });
   document.getElementById('next-note-display').textContent = eventLabel(event);
+  scrollReferenceKeyboardToMidi(leadPitchFromEvent(event));
   renderNoteHighway();
   syncExpectedMicNote();
 }
@@ -1567,7 +1654,9 @@ function handleNote(midi) {
   });
   const keyId = cueKeyIdForMidi(midi);
   highlightKey(keyId, true);
+  highlightKey(`refkey-${midi}`, true);
   setTimeout(() => highlightKey(keyId, false), 120);
+  setTimeout(() => highlightKey(`refkey-${midi}`, false), 120);
 
   const beat = state.tracker.onNote(midi);
   if (beat !== null) {
@@ -1595,7 +1684,9 @@ function handleMidiNote(midi) {
   _lastMidiNoteTime = now;
   const keyId = cueKeyIdForMidi(midi);
   highlightKey(keyId, true);
+  highlightKey(`refkey-${midi}`, true);
   setTimeout(() => highlightKey(keyId, false), 120);
+  setTimeout(() => highlightKey(`refkey-${midi}`, false), 120);
 
   const beat = state.tracker.onNote(midi);
   if (beat !== null) {
@@ -1839,7 +1930,9 @@ const savedScoreGridColumns = localStorage.getItem('accompy_score_grid_columns')
 if (savedScoreGridColumns) {
   state.scoreGridColumns = normalizedScoreGridColumns(savedScoreGridColumns);
 }
+state.keyboardLayoutMode = localStorage.getItem('accompy_keyboard_layout_mode') === 'mini' ? 'mini' : 'full';
 applyScoreGridColumns(state.scoreGridColumns);
+applyKeyboardLayoutMode(state.keyboardLayoutMode);
 applyTheme(localStorage.getItem('accompy_theme') || 'dark');
 window.addEventListener('resize', resizeScorePreviews);
 
@@ -1988,6 +2081,7 @@ window.importScoreFiles = importScoreFiles;
 // ── Init ──────────────────────────────────────────────────────────────────────
 initLatencyControls();
 initImportControls();
+initKeyboardLayoutToggle();
 onNoiseGateChange(document.getElementById('noise-gate')?.value || '1');
 setLatencyCompensation(localStorage.getItem('accompy_latency_comp_ms') || '0');
 initAppConfig().then(() => {

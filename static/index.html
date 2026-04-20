@@ -131,16 +131,33 @@
   <!-- Keyboard layout -->
   <div class="keyboard-section" id="keyboard-section">
     <div class="keyboard-heading">
-      <h4>Keyboard layout</h4>
-      <div class="help-tip" tabindex="0" aria-label="Keyboard layout help">
-        ?
-        <div class="help-tip-popup">A S D J K L ; play C D E F G A B. Hold Shift for sharps.</div>
+      <div class="keyboard-heading-main">
+        <h4>Keyboard layout</h4>
+        <div class="help-tip" tabindex="0" aria-label="Keyboard layout help">
+          ?
+          <div class="help-tip-popup">A S D J K L ; play C D E F G A B. Hold Shift for sharps.</div>
+        </div>
+      </div>
+      <div class="keyboard-view-toggle">
+        <button class="keyboard-view-btn" id="keyboard-view-full" onclick="setKeyboardLayoutMode('full')">Full</button>
+        <button class="keyboard-view-btn" id="keyboard-view-mini" onclick="setKeyboardLayoutMode('mini')">Mini</button>
       </div>
     </div>
     <div class="piano-stage">
-      <div id="note-highway" class="note-highway"></div>
-      <div class="kb-layout">
-        <div id="kb-row-main" class="kb-row"></div>
+      <div class="mini-keyboard-panel" id="mini-keyboard-panel">
+        <div id="note-highway" class="note-highway"></div>
+        <div class="kb-layout" id="mini-keyboard-layout">
+          <div id="kb-row-main" class="kb-row"></div>
+        </div>
+      </div>
+      <div class="reference-keyboard-panel" id="full-keyboard-panel">
+        <div class="reference-keyboard-title">Full piano board</div>
+        <div class="reference-keyboard-shell" id="reference-keyboard-shell">
+          <div class="reference-keyboard" id="reference-keyboard">
+            <div id="full-kb-whites" class="reference-whites"></div>
+            <div id="full-kb-blacks" class="reference-blacks"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
