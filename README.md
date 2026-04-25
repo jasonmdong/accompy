@@ -1,6 +1,8 @@
 # Accompy
 
-A real-time accompanist (for now for piano ideally lol). Select right or left hand, then accompy tracks your tempo and plays the rest automatically.
+A real-time accompanist (for now for piano ideally lol). Select right/left hand, then accompy tracks your tempo and accompanies automatically.
+
+![Accompy demo](docs/images/demo.png)
 
 ## Setup
 
