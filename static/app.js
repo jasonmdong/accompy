@@ -756,7 +756,7 @@ function applyPlaySidebarCollapsed(collapsed) {
   if (!shell || !toggle) return;
   const normalized = !!collapsed;
   shell.dataset.sidebar = normalized ? 'collapsed' : 'open';
-  toggle.textContent = normalized ? '→' : '←';
+  toggle.textContent = '☰';
   toggle.setAttribute('aria-label', normalized ? 'Expand piece sidebar' : 'Collapse piece sidebar');
   localStorage.setItem(PLAY_SIDEBAR_COLLAPSED_KEY, normalized ? '1' : '0');
 }
