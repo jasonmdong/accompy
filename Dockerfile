@@ -13,6 +13,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     fontconfig \
+    libasound2t64 \
+    libfreetype6 \
+    libxi6 \
+    libxrender1 \
+    libxtst6 \
     python3 \
     python3-pip \
     python3-venv \
@@ -23,9 +28,7 @@ RUN apt-get update && apt-get install -y \
 
 RUN wget -O /tmp/audiveris.deb \
     https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/${AUDIVERIS_DEB} \
-    && apt-get update \
-    && (apt-get install -y /tmp/audiveris.deb \
-        || (apt-get install -f -y && apt-get install -y /tmp/audiveris.deb)) \
+    && dpkg-deb -x /tmp/audiveris.deb / \
     && test -x /opt/audiveris/bin/Audiveris \
     && rm -f /tmp/audiveris.deb \
     && rm -rf /var/lib/apt/lists/*
