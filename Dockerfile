@@ -39,8 +39,7 @@ RUN userdel -r ubuntu 2>/dev/null || true \
 WORKDIR /app
 
 COPY requirements.space.txt /app/requirements.space.txt
-RUN python3 -m pip install --break-system-packages --upgrade pip \
-    && python3 -m pip install --break-system-packages -r /app/requirements.space.txt
+RUN python3 -m pip install --break-system-packages -r /app/requirements.space.txt
 
 COPY app.py /app/app.py
 COPY src /app/src
