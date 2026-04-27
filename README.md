@@ -1,6 +1,16 @@
+---
+title: accompy
+emoji: 🎹
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Accompy
 
-A real-time accompanist (for now for piano ideally lol). Select right/left hand, then accompy tracks your tempo and accompanies automatically.
+A real-time accompanist (for now for piano ideally lol). Select right/left hand, then accompy tracks your tempo and accompanies automatically. Demo available [here](https://jasonmdong-accompy.hf.space/).
 
 ![Accompy demo](docs/images/demo.png)
 
@@ -12,7 +22,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Web UI
+## Webapp
 
 ```bash
 python run.py
