@@ -531,6 +531,7 @@ class Tracker {
     this._pendingPosition = -1;
     this._pendingStartedAt = 0;
     this._recentNotes = [];
+    this._lastAdvancedPosition = -1;
   }
 
   onNote(pitch) {
@@ -576,6 +577,7 @@ class Tracker {
     this._pendingPosition = -1;
     this._pendingStartedAt = 0;
     this.position = i + 1;
+    this._lastAdvancedPosition = i;
     const beat = this.score[i][1];
     this.timestamps.push({ time: now, beat });
     if (this.timestamps.length > 5) this.timestamps.shift();
@@ -721,6 +723,7 @@ let state = {
   paused:           false,
   pausedBeat:       0,
   pausedBps:        1,
+  finishedPlayback: false,
   sheetView: { zoom: 1.0, rotation: 0 },
   sheetSource: null, // { name, variant, hasSheet, musicXml }
   sheetVariant: 'base',
@@ -730,6 +733,7 @@ let _noteHighwayRaf = null;
 let _noteHighwayStartTime = null;
 let _noteHighwayStartBeat = 0;
 let _noteHighwayBps = 1;
+let _finishPlaybackTimer = null;
 
 let _sheetMeasureEls = [];
 let _sheetHighlightRect = null;
@@ -1255,7 +1259,7 @@ function applyTheme(theme) {
   const normalized = theme === 'light' ? 'light' : 'dark';
   document.body.classList.toggle('light', normalized === 'light');
   const toggle = document.getElementById('theme-toggle');
-  if (toggle) toggle.textContent = normalized === 'light' ? 'Dark' : 'Light';
+  if (toggle) toggle.textContent = normalized === 'light' ? '🌙' : '☀️';
   localStorage.setItem('accompy_theme', normalized);
   document.querySelectorAll('#sheet-frame, .score-preview-frame').forEach((frame) => sanitizeSheetFrame(frame));
 }
@@ -1866,6 +1870,7 @@ async function openScore(name, options = {}) {
   const previousVariant = preserveSheetVariant ? state.sheetVariant : 'base';
   const data = await fetchScore(name);
   state.current = data;
+  state.finishedPlayback = false;
   const parts = data.parts || [];
   state.selectedPart = parts.length
     ? Math.max(0, Math.min(previousPart, parts.length - 1))
@@ -2151,6 +2156,7 @@ function currentGuideBeat(rightHand) {
   if (!anchorTime) return Math.min(anchorBeat, expectedBeat);
 
   const estimated = anchorBeat + Math.max(0, performance.now() / 1000 - anchorTime) * bps;
+  if (state.tracker?.isFinished?.()) return estimated;
   return Math.min(estimated, expectedBeat);
 }
 
@@ -2194,15 +2200,22 @@ function computeBarGeometry(delta, sustainBeats, laneHeight, hitLineTop, pixelsP
 function renderNoteHighway() {
   ensureNoteHighway();
   const root = document.getElementById('note-highway');
+  if (state.finishedPlayback && !state.playing) {
+    document.querySelectorAll('.note-bar, .full-note-bar').forEach((el) => el.remove());
+    return;
+  }
 
   const rightHand = getRightHand();
   const trackerPos = state.tracker?.position ?? 0;
+  const activeIndex = state.tracker?.isFinished?.()
+    ? (state.tracker?._lastAdvancedPosition ?? trackerPos)
+    : trackerPos;
   const hasMatchedAnyNote = (state.tracker?.timestamps?.length ?? 0) > 0;
   const openingOnlyCurrent = trackerPos === 0 && !hasMatchedAnyNote;
   const currentBeat = rightHand.length ? currentGuideBeat(rightHand) : 0;
   updateSheetHighlight(currentBeat);
 
-  renderFullKeyboardHighway(rightHand, trackerPos, currentBeat, openingOnlyCurrent);
+  renderFullKeyboardHighway(rightHand, activeIndex, currentBeat, openingOnlyCurrent);
 
   if (!root) return;
   root.querySelectorAll('.note-bar').forEach((el) => el.remove());
@@ -2238,7 +2251,7 @@ function renderNoteHighway() {
       const laneEl = root.querySelector(`[data-lane="${lane.id}"]`);
       if (!laneEl) return;
       const bar = document.createElement('div');
-      bar.className = `note-bar${lane.sharp ? ' sharp' : ''}${i === trackerPos ? ' current' : ''}`;
+      bar.className = `note-bar${lane.sharp ? ' sharp' : ''}${i === activeIndex ? ' current' : ''}`;
       bar.style.top = `${geom.top}px`;
       bar.style.height = `${geom.height}px`;
       laneEl.appendChild(bar);
@@ -2380,6 +2393,7 @@ function updateNextKey(rightHand, position) {
   document.querySelectorAll('.kb-key.next, .kb-sharp.next, .ref-key.next')
     .forEach(el => el.classList.remove('next'));
   if (position >= rightHand.length) {
+    document.getElementById('next-note-display').textContent = '—';
     renderNoteHighway();
     return;
   }
@@ -2406,6 +2420,7 @@ function handleStartPause() {
 
 async function startPlaying() {
   audioCtx().resume(); // unblock audio on user gesture
+  clearFinishPlaybackTimer();
 
   const bpm        = parseFloat(document.getElementById('bpm-input').value) || 100;
   const initialBps = bpm / 60;
@@ -2453,6 +2468,7 @@ async function startPlaying() {
   state.paused = false;
   state.pausedBeat = 0;
   state.pausedBps = initialBps;
+  state.finishedPlayback = false;
   _noteHighwayStartTime = null;
   _noteHighwayStartBeat = 0;
   _noteHighwayBps = initialBps;
@@ -2504,7 +2520,24 @@ function togglePausePlaying() {
   syncExpectedMicNote();
 }
 
+function clearFinishPlaybackTimer() {
+  if (!_finishPlaybackTimer) return;
+  clearTimeout(_finishPlaybackTimer);
+  _finishPlaybackTimer = null;
+}
+
+function scheduleFinishedPlayback() {
+  if (_finishPlaybackTimer || !state.tracker?.isFinished?.()) return;
+  const bps = Math.max(0.35, state.tracker?.bps?.() ?? _noteHighwayBps ?? 1);
+  const delayMs = Math.max(650, Math.min(2200, ((HIGHWAY_LOOK_BEHIND_BEATS + 0.18) / bps) * 1000));
+  _finishPlaybackTimer = setTimeout(() => {
+    _finishPlaybackTimer = null;
+    if (state.tracker?.isFinished?.()) stopPlaying('finished');
+  }, delayMs);
+}
+
 function stopPlaying(reason = 'stopped') {
+  clearFinishPlaybackTimer();
   if (state.accompanist) state.accompanist.stop();
   _stopMic();
   stopNoteHighwayLoop();
@@ -2512,6 +2545,7 @@ function stopPlaying(reason = 'stopped') {
   state.playing = false;
   state.paused = false;
   state.pausedBeat = 0;
+  state.finishedPlayback = finished;
   _noteHighwayStartTime = null;
   const startBtn = document.getElementById('start-btn');
   const stopBtn = document.getElementById('stop-btn');
@@ -2549,7 +2583,7 @@ function handleNoteMic(midi) {
     updateNextKey(getRightHand(), state.tracker.position);
     syncExpectedMicNote();
   }
-  if (state.tracker.isFinished()) stopPlaying('finished');
+  if (state.tracker.isFinished()) scheduleFinishedPlayback();
 }
 
 function handleNote(midi) {
@@ -2581,7 +2615,7 @@ function handleNote(midi) {
     updateNextKey(getRightHand(), state.tracker.position);
   }
 
-  if (state.tracker.isFinished()) stopPlaying('finished');
+  if (state.tracker.isFinished()) scheduleFinishedPlayback();
 }
 
 function handleKeyboardInput(midiOrPitches) {
@@ -2616,7 +2650,7 @@ function handleMidiNote(midi) {
     updateNextKey(getRightHand(), state.tracker.position);
   }
 
-  if (state.tracker.isFinished()) stopPlaying('finished');
+  if (state.tracker.isFinished()) scheduleFinishedPlayback();
 }
 
 // ── Input mode ───────────────────────────────────────────────────────────────
@@ -2797,18 +2831,44 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Web MIDI input ────────────────────────────────────────────────────────────
+function setMidiBadge(stateClass, text) {
+  const badge = document.getElementById('midi-status');
+  const label = document.getElementById('midi-status-text');
+  if (!badge || !label) return;
+  badge.classList.remove('midi-badge-connected', 'midi-badge-disconnected', 'midi-badge-unsupported');
+  badge.classList.add(stateClass);
+  label.textContent = text;
+}
+
+function refreshMidiInputs(access) {
+  const inputs = Array.from(access.inputs.values());
+  _midiConnected = inputs.length > 0;
+  for (const input of inputs) {
+    input.onmidimessage = ({ data }) => {
+      const [status, pitch, velocity] = data;
+      if ((status & 0xF0) === 0x90 && velocity > 0) handleMidiNote(pitch);
+    };
+  }
+  if (inputs.length === 0) {
+    setMidiBadge('midi-badge-disconnected', 'No piano detected');
+  } else {
+    const name = inputs[0].name || 'MIDI device';
+    const extra = inputs.length > 1 ? ` (+${inputs.length - 1})` : '';
+    setMidiBadge('midi-badge-connected', `Piano connected: ${name}${extra}`);
+  }
+}
+
 function enableMidi() {
-  if (!navigator.requestMIDIAccess) return;
+  if (!navigator.requestMIDIAccess) {
+    setMidiBadge('midi-badge-unsupported', 'MIDI not supported');
+    return;
+  }
   navigator.requestMIDIAccess().then(access => {
-    _midiConnected = access.inputs.size > 0;
-    for (const input of access.inputs.values()) {
-      input.onmidimessage = ({ data }) => {
-        const [status, pitch, velocity] = data;
-        if ((status & 0xF0) === 0x90 && velocity > 0) handleMidiNote(pitch);
-      };
-    }
-    document.getElementById('midi-status').textContent = 'MIDI: connected';
-  }).catch(() => {});
+    refreshMidiInputs(access);
+    access.onstatechange = () => refreshMidiInputs(access);
+  }).catch(() => {
+    setMidiBadge('midi-badge-disconnected', 'MIDI access denied');
+  });
 }
 
 // ── Delete piece ─────────────────────────────────────────────────────────────

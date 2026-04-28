@@ -10,8 +10,7 @@
 
 <header>
   <h1>acc<span>ompy</span></h1>
-  <small id="midi-status" style="color:#555;font-size:.8rem;margin-left:auto"></small>
-  <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle light and dark mode">Light</button>
+  <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle light and dark mode" style="margin-left:auto">☀️</button>
 </header>
 
 <!-- ── Score list ── -->
@@ -193,9 +192,15 @@
           <div class="help-tip-popup">A S D J K L ; play C D E F G A B. W E I O P play the black keys.</div>
         </div>
       </div>
-      <div class="keyboard-view-toggle">
-        <button class="keyboard-view-btn" id="keyboard-view-full" onclick="setKeyboardLayoutMode('full')">Full</button>
-        <button class="keyboard-view-btn" id="keyboard-view-mini" onclick="setKeyboardLayoutMode('mini')">Mini</button>
+      <div style="display:flex;align-items:center;gap:.6rem">
+        <span id="midi-status" class="midi-badge midi-badge-disconnected" title="MIDI piano status">
+          <span class="midi-badge-dot"></span>
+          <span id="midi-status-text">No piano detected</span>
+        </span>
+        <div class="keyboard-view-toggle">
+          <button class="keyboard-view-btn" id="keyboard-view-full" onclick="setKeyboardLayoutMode('full')">Full</button>
+          <button class="keyboard-view-btn" id="keyboard-view-mini" onclick="setKeyboardLayoutMode('mini')">Mini</button>
+        </div>
       </div>
     </div>
     <div class="piano-stage">

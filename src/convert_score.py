@@ -176,6 +176,12 @@ def slugify_score_name(raw: str) -> str:
     return name or "imported_score"
 
 
+def humanize_score_title(raw: str) -> str:
+    base = os.path.splitext(os.path.basename(raw))[0]
+    cleaned = re.sub(r'[_\-]+', ' ', base).strip()
+    return cleaned.title() if cleaned else "Untitled"
+
+
 def write_score_py(
     parts_data: list,
     out_path: str,
@@ -263,12 +269,12 @@ def convert_score_source(source: str, *, name: str | None = None, out_dir: str |
         corpus_path = source[len("corpus:"):]
         mxl_path = str(m21corpus.getWork(corpus_path))
         score = m21corpus.parse(corpus_path)
-        title_fallback = source
+        title_fallback = humanize_score_title(source)
         render_source_path = mxl_path
     else:
         mxl_path = source
         score = converter.parse(source)
-        title_fallback = source
+        title_fallback = humanize_score_title(source)
         render_source_path = mxl_path
 
     parts_data = build_parts_data(score)
