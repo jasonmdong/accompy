@@ -27,6 +27,7 @@ import requests
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
 from src.env import load_local_env
 from src.convert_score import convert_score_source, render_html, slugify_score_name
@@ -37,6 +38,16 @@ from src.storage import create_score_store, SupabaseScoreStore, _score_row_to_pa
 load_local_env()
 
 app = FastAPI()
+
+
+class SPAStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404 and "." not in Path(path).name:
+                return await super().get_response("index.html", scope)
+            raise
 
 
 # ── Corpus index (built once on first search) ─────────────────────────────────
@@ -787,5 +798,5 @@ async def import_score(
     }
 
 
-# Serve static files and fallback to index.html
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+# Serve static files and fallback to index.html for browser-routed score URLs.
+app.mount("/", SPAStaticFiles(directory=STATIC_DIR, html=True), name="static")

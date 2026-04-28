@@ -1167,6 +1167,550 @@ body.light .sheet-musicxml-fallback {
 
 }
 
+/* ── Practice workspace refactor ── */
+#play-screen {
+  height: calc(100vh - 70px);
+  overflow: hidden;
+}
+
+#play-screen h2 {
+  margin: 0;
+  color: var(--text);
+}
+
+.play-shell {
+  grid-template-columns: 260px 12px minmax(0, 1fr);
+  column-gap: .5rem;
+  row-gap: 1rem;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+}
+
+.play-shell[data-sidebar="collapsed"] {
+  grid-template-columns: 58px 12px minmax(0, 1fr);
+}
+
+.play-sidebar {
+  position: relative;
+  top: auto;
+  height: 100%;
+  max-height: none;
+  border-radius: 8px;
+}
+
+.play-piece-list {
+  max-height: none;
+  min-height: 0;
+}
+
+.play-content {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: .75rem;
+  min-height: 0;
+}
+
+.progress-bar {
+  margin-bottom: 0;
+  height: 5px;
+}
+
+.practice-area {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 12px 320px;
+  column-gap: .5rem;
+  row-gap: 1rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.layout-splitter {
+  position: relative;
+  min-width: 12px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.layout-splitter::before {
+  content: "";
+  position: absolute;
+  top: .5rem;
+  bottom: .5rem;
+  left: 50%;
+  width: 1px;
+  background: var(--border);
+}
+
+.layout-splitter span {
+  position: relative;
+  width: 5px;
+  height: 54px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-strong) 82%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--surface) 75%, transparent);
+}
+
+.layout-splitter:hover span,
+.layout-splitter:focus-visible span,
+body.layout-resizing .layout-splitter span {
+  background: color-mix(in srgb, var(--accent) 72%, white);
+}
+
+body.layout-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.practice-workspace {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 12px minmax(0, 1fr);
+  gap: 0;
+}
+
+.practice-area .sheet-section {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.sheet-header {
+  flex-shrink: 0;
+}
+
+.sheet-viewer {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.sheet-content-wrap {
+  height: 100%;
+  min-height: 100%;
+}
+
+#sheet-frame {
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+
+.sheet-musicxml-fallback {
+  height: 100%;
+  min-height: 100%;
+  overflow: auto;
+}
+
+.practice-splitter {
+  position: relative;
+  min-height: 12px;
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.practice-splitter::before {
+  content: "";
+  position: absolute;
+  left: .5rem;
+  right: .5rem;
+  top: 50%;
+  height: 1px;
+  background: var(--border);
+}
+
+.practice-splitter span {
+  position: relative;
+  width: 54px;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-strong) 82%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--surface) 75%, transparent);
+}
+
+.practice-splitter:hover span,
+.practice-splitter:focus-visible span,
+body.practice-resizing .practice-splitter span {
+  background: color-mix(in srgb, var(--accent) 72%, white);
+}
+
+body.practice-resizing {
+  cursor: row-resize;
+  user-select: none;
+}
+
+.practice-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+  overflow: auto;
+}
+
+.practice-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: .9rem;
+}
+
+.practice-card h4,
+.practice-card h5 {
+  margin: 0 0 .75rem;
+  font-size: .78rem;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+.practice-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  margin-bottom: .75rem;
+}
+
+.practice-card-header h4 {
+  margin: 0;
+}
+
+.practice-pill {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: .18rem .55rem;
+  color: var(--muted);
+  font-size: .72rem;
+  background: var(--surface);
+}
+
+.next-note-card {
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  padding: .85rem;
+  text-align: center;
+  margin-bottom: .75rem;
+}
+
+.next-note-card > span {
+  display: block;
+  color: var(--muted);
+  font-size: .76rem;
+  margin-bottom: .35rem;
+}
+
+.practice-panel .status-panel {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  height: auto;
+}
+
+.practice-panel .status-row {
+  margin-bottom: .55rem;
+}
+
+.practice-panel .status-row:last-child {
+  margin-bottom: 0;
+}
+
+#next-note-display {
+  margin-top: 0;
+  font-size: 2.55rem;
+  line-height: 1;
+}
+
+.setup-control-block {
+  display: grid;
+  gap: .35rem;
+  margin-bottom: .75rem;
+}
+
+.setup-control-block label,
+.setup-card .latency-row label {
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 700;
+}
+
+.setup-control-block .bpm-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .5rem;
+}
+
+.setup-control-block .bpm-row input {
+  width: 100%;
+  min-width: 0;
+}
+
+.setup-control-block .bpm-row span,
+.setup-card .latency-row span {
+  color: var(--muted);
+  font-size: .76rem;
+}
+
+.setup-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5rem;
+  margin: 0 0 .8rem;
+}
+
+.setup-actions .btn {
+  justify-content: center;
+}
+
+.setup-card .latency-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: .5rem;
+  margin: 0 0 .85rem;
+}
+
+.setup-card .part-picker,
+.input-mode-section {
+  margin: 0;
+  height: auto;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+}
+
+.setup-card .part-picker h5 {
+  margin-bottom: .55rem;
+}
+
+.part-buttons {
+  gap: .45rem;
+}
+
+.part-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, .8fr);
+}
+
+.part-btn {
+  width: 100%;
+  text-align: left;
+}
+
+.accompaniment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-top: .75rem;
+  padding-top: .75rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.accompaniment-row strong {
+  color: var(--text);
+  font-size: .8rem;
+}
+
+.practice-panel .input-mode-section h4 {
+  margin-bottom: .65rem;
+}
+
+.practice-panel .input-mode-tabs {
+  margin-bottom: .65rem;
+}
+
+.practice-panel .mode-tab {
+  flex: 1;
+  padding: .42rem .55rem;
+  white-space: nowrap;
+}
+
+.keyboard-section {
+  min-height: 0;
+  margin-bottom: 0;
+  padding: .55rem .7rem .7rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.keyboard-heading {
+  flex-shrink: 0;
+  margin-bottom: .5rem;
+  gap: .6rem;
+}
+
+.keyboard-section h4 {
+  font-size: .78rem;
+}
+
+.keyboard-view-toggle {
+  flex-wrap: wrap;
+}
+
+.keyboard-view-btn {
+  white-space: nowrap;
+}
+
+.piano-stage {
+  border-radius: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mini-keyboard-panel {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.note-highway {
+  height: 110px;
+  min-height: 80px;
+  flex: 1;
+}
+
+.kb-layout {
+  padding: .5rem;
+  flex-shrink: 0;
+}
+
+.kb-key {
+  height: 92px;
+  padding-top: 1.25rem;
+}
+
+.kb-key-white {
+  height: 92px;
+}
+
+.kb-key-black {
+  height: 58px;
+  padding-top: .65rem;
+}
+
+.reference-keyboard-panel {
+  margin-top: 0;
+  padding: .45rem .55rem .55rem;
+  border-top: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.reference-keyboard-title {
+  flex-shrink: 0;
+  font-size: .76rem;
+  margin: 0 0 .45rem;
+  padding-left: 0;
+}
+
+.full-note-highway {
+  flex: 1;
+  min-height: 72px;
+  margin-bottom: .55rem;
+}
+
+.reference-keyboard-shell {
+  flex-shrink: 0;
+  height: clamp(72px, 18vh, 118px);
+  padding: 0;
+}
+
+.reference-keyboard {
+  height: 100%;
+  border-radius: 8px;
+}
+
+.ref-key-white {
+  padding-bottom: .2rem;
+  font-size: 0;
+}
+
+.ref-key-black {
+  height: 58%;
+  padding-bottom: .12rem;
+  font-size: 0;
+}
+
+@media (max-width: 1180px) {
+  #play-screen {
+    height: auto;
+    overflow: visible;
+  }
+
+  .play-shell {
+    grid-template-columns: 220px 12px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .practice-area {
+    grid-template-columns: 1fr !important;
+  }
+
+  .panel-splitter {
+    display: none;
+  }
+
+  .practice-panel {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+@media (max-width: 900px) {
+  .play-shell,
+  .play-shell[data-sidebar="collapsed"] {
+    grid-template-columns: 1fr !important;
+    height: auto;
+  }
+
+  .shell-splitter {
+    display: none;
+  }
+
+  .practice-workspace {
+    grid-template-rows: minmax(420px, 1fr) 12px minmax(260px, .7fr);
+  }
+
+  .practice-panel {
+    grid-template-columns: 1fr;
+  }
+
+  #sheet-frame,
+  .sheet-musicxml-fallback {
+    min-height: 100%;
+  }
+
+  .setup-card .latency-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .setup-card .latency-row span {
+    text-align: left;
+  }
+}
+
 /* ── Modal ── */
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,.65);

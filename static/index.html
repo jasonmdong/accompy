@@ -115,75 +115,24 @@
     <div id="play-piece-list" class="play-piece-list"></div>
   </aside>
 
-  <div class="play-content">
-  <div class="play-header">
-    <div class="top-row">
-      <button class="btn btn-ghost" onclick="showScreen('list-screen')">← Back</button>
-      <h2 id="play-title"></h2>
-    </div>
-
-    <div class="controls controls-top">
-      <label>Starting tempo</label>
-      <div class="tempo-row">
-        <div class="bpm-row">
-          <input id="bpm-input" type="number" value="60" min="20" max="300">
-          <span style="color:#555;font-size:.85rem">BPM</span>
-        </div>
-        <div class="tempo-actions">
-          <button id="start-btn" class="btn btn-primary" onclick="handleStartPause()">▶ Start</button>
-          <button id="stop-btn" class="btn btn-danger" onclick="stopPlaying()" disabled>■ End</button>
-        </div>
-      </div>
-      <div class="latency-row">
-        <label for="latency-slider">Latency compensation</label>
-        <input id="latency-slider" type="range" min="0" max="500" step="10" value="0"
-               oninput="setLatencyCompensation(this.value)">
-        <span id="latency-value">0 ms</span>
-      </div>
-    </div>
+  <div
+    class="layout-splitter shell-splitter"
+    id="shell-splitter"
+    role="separator"
+    aria-label="Resize pieces sidebar"
+    aria-orientation="vertical"
+    aria-valuemin="180"
+    aria-valuemax="420"
+    aria-valuenow="260"
+    tabindex="0">
+    <span></span>
   </div>
 
+  <div class="play-content">
   <div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width:0%"></div></div>
 
-  <div class="play-main">
-  <!-- Keyboard layout -->
-  <div class="keyboard-section" id="keyboard-section">
-    <div class="keyboard-heading">
-      <div class="keyboard-heading-main">
-        <h4>Keyboard layout</h4>
-        <div class="help-tip" tabindex="0" aria-label="Keyboard layout help">
-          ?
-          <div class="help-tip-popup">A S D J K L ; play C D E F G A B. Hold Shift for sharps.</div>
-        </div>
-      </div>
-      <div class="keyboard-view-toggle">
-        <button class="keyboard-view-btn" id="keyboard-view-full" onclick="setKeyboardLayoutMode('full')">Full</button>
-        <button class="keyboard-view-btn" id="keyboard-view-mini" onclick="setKeyboardLayoutMode('mini')">Mini</button>
-      </div>
-    </div>
-    <div class="piano-stage">
-      <div class="mini-keyboard-panel" id="mini-keyboard-panel">
-        <div id="note-highway" class="note-highway"></div>
-        <div class="kb-layout" id="mini-keyboard-layout">
-          <div id="kb-row-main" class="kb-row"></div>
-        </div>
-      </div>
-      <div class="reference-keyboard-panel" id="full-keyboard-panel">
-        <div class="reference-keyboard-title">Full piano board</div>
-        <div id="full-note-highway" class="full-note-highway">
-          <div class="full-note-hit-line"></div>
-        </div>
-        <div class="reference-keyboard-shell" id="reference-keyboard-shell">
-          <div class="reference-keyboard" id="reference-keyboard">
-            <div id="full-kb-whites" class="reference-whites"></div>
-            <div id="full-kb-blacks" class="reference-blacks"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Sheet music -->
+  <div class="practice-area">
+  <div class="practice-workspace" id="practice-workspace">
   <div class="sheet-section">
     <div class="sheet-header">
       <div class="sheet-title-row">
@@ -221,34 +170,127 @@
       </div>
     </div>
   </div>
+
+  <div
+    class="practice-splitter"
+    id="practice-splitter"
+    role="separator"
+    aria-label="Resize sheet music and keyboard visualizer"
+    aria-orientation="horizontal"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    aria-valuenow="50"
+    tabindex="0">
+    <span></span>
   </div>
 
-  <div class="play-bottom">
-    <div id="part-picker" class="part-picker" style="display:none">
-      <h4>Choose your part</h4>
-      <div id="part-buttons" class="part-buttons"></div>
+  <div class="keyboard-section" id="keyboard-section">
+    <div class="keyboard-heading">
+      <div class="keyboard-heading-main">
+        <h4>Keyboard visualizer</h4>
+        <div class="help-tip" tabindex="0" aria-label="Keyboard layout help">
+          ?
+          <div class="help-tip-popup">A S D J K L ; play C D E F G A B. W E I O P play the black keys.</div>
+        </div>
+      </div>
+      <div class="keyboard-view-toggle">
+        <button class="keyboard-view-btn" id="keyboard-view-full" onclick="setKeyboardLayoutMode('full')">Full</button>
+        <button class="keyboard-view-btn" id="keyboard-view-mini" onclick="setKeyboardLayoutMode('mini')">Mini</button>
+      </div>
     </div>
+    <div class="piano-stage">
+      <div class="mini-keyboard-panel" id="mini-keyboard-panel">
+        <div id="note-highway" class="note-highway"></div>
+        <div class="kb-layout" id="mini-keyboard-layout">
+          <div id="kb-row-main" class="kb-row"></div>
+        </div>
+      </div>
+      <div class="reference-keyboard-panel" id="full-keyboard-panel">
+        <div class="reference-keyboard-title">Full piano board</div>
+        <div id="full-note-highway" class="full-note-highway">
+          <div class="full-note-hit-line"></div>
+        </div>
+        <div class="reference-keyboard-shell" id="reference-keyboard-shell">
+          <div class="reference-keyboard" id="reference-keyboard">
+            <div id="full-kb-whites" class="reference-whites"></div>
+            <div id="full-kb-blacks" class="reference-blacks"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
 
-    <div class="controls-panel">
+  <div
+    class="layout-splitter panel-splitter"
+    id="panel-splitter"
+    role="separator"
+    aria-label="Resize practice panel"
+    aria-orientation="vertical"
+    aria-valuemin="260"
+    aria-valuemax="520"
+    aria-valuenow="320"
+    tabindex="0">
+    <span></span>
+  </div>
+
+  <aside class="practice-panel">
+    <section class="practice-card setup-card">
+      <h4>Practice Setup</h4>
+      <div class="setup-control-block">
+        <label for="bpm-input">Starting tempo</label>
+        <div class="bpm-row">
+          <input id="bpm-input" type="number" value="60" min="20" max="300">
+          <span>BPM</span>
+        </div>
+      </div>
+      <div class="tempo-actions setup-actions">
+        <button id="start-btn" class="btn btn-primary" onclick="handleStartPause()">▶ Start</button>
+        <button id="stop-btn" class="btn btn-danger" onclick="stopPlaying()" disabled>■ End</button>
+      </div>
+      <div class="latency-row">
+        <label for="latency-slider">Latency</label>
+        <input id="latency-slider" type="range" min="0" max="500" step="10" value="0"
+               oninput="setLatencyCompensation(this.value)">
+        <span id="latency-value">0 ms</span>
+      </div>
+      <div id="part-picker" class="part-picker" style="display:none">
+        <h5>Your part</h5>
+        <div id="part-buttons" class="part-buttons"></div>
+      </div>
+      <div class="accompaniment-row">
+        <span>Accompaniment</span>
+        <strong>Other parts</strong>
+      </div>
+    </section>
+
+    <section class="practice-card performance-card">
+      <div class="practice-card-header">
+        <h4>Practice</h4>
+        <span id="practice-input-status" class="practice-pill">Keyboard</span>
+      </div>
+      <div class="next-note-card">
+        <span>Next note</span>
+        <div id="next-note-display">—</div>
+      </div>
       <div class="status-panel">
         <div class="status-row">
           <span>Current beat</span>
           <span class="status-val" id="beat-val">—</span>
         </div>
         <div class="status-row">
-          <span>Detected tempo</span>
+          <span>Detected BPM</span>
           <span class="status-val" id="tempo-val">—</span>
         </div>
         <div class="status-row">
-          <span>Next note</span>
+          <span>Following</span>
+          <span class="status-val" id="practice-following-status">Ready</span>
         </div>
-        <div id="next-note-display">—</div>
       </div>
-    </div>
-  </div>
+    </section>
 
-  <div class="input-mode-section">
-    <h4>Input</h4>
+    <section class="practice-card input-mode-section">
+    <h4>Input method</h4>
     <div class="input-mode-tabs">
       <button class="mode-tab active" id="tab-keyboard" onclick="setInputMode('keyboard')">⌨ Keyboard</button>
       <button class="mode-tab" id="tab-mic" onclick="setInputMode('mic')">🎙 Microphone</button>
@@ -294,6 +336,8 @@
         Raise the gate if false notes fire; lower it if your playing isn't registering.
       </p>
     </div>
+    </section>
+  </aside>
   </div>
   </div>
   </div>

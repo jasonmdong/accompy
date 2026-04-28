@@ -1,30 +1,34 @@
 // ── Simple keyboard mapping ─────────────────────────────────────────────────
 const SIMPLE_KEY_ORDER = ['KeyA', 'KeyS', 'KeyD', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon'];
 const SIMPLE_KEY_LAYOUT = {
-  KeyA:      { label: 'a', natural: 0, naturalName: 'C' },
-  KeyS:      { label: 's', natural: 2, naturalName: 'D' },
-  KeyD:      { label: 'd', natural: 4, naturalName: 'E' },
-  KeyJ:      { label: 'j', natural: 5, naturalName: 'F' },
-  KeyK:      { label: 'k', natural: 7, naturalName: 'G' },
-  KeyL:      { label: 'l', natural: 9, naturalName: 'A' },
-  Semicolon: { label: ';', natural: 11, naturalName: 'B' },
+  KeyA:      { label: 'a', pitchClass: 0, noteName: 'C' },
+  KeyW:      { label: 'W', pitchClass: 1, noteName: 'C#' },
+  KeyS:      { label: 's', pitchClass: 2, noteName: 'D' },
+  KeyE:      { label: 'E', pitchClass: 3, noteName: 'D#' },
+  KeyD:      { label: 'd', pitchClass: 4, noteName: 'E' },
+  KeyJ:      { label: 'j', pitchClass: 5, noteName: 'F' },
+  KeyI:      { label: 'I', pitchClass: 6, noteName: 'F#' },
+  KeyK:      { label: 'k', pitchClass: 7, noteName: 'G' },
+  KeyO:      { label: 'O', pitchClass: 8, noteName: 'G#' },
+  KeyL:      { label: 'l', pitchClass: 9, noteName: 'A' },
+  KeyP:      { label: 'P', pitchClass: 10, noteName: 'A#' },
+  Semicolon: { label: ';', pitchClass: 11, noteName: 'B' },
 };
-const SHARPABLE_CODES = new Set(['KeyA', 'KeyS', 'KeyJ', 'KeyK', 'KeyL']);
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const FULL_KEYBOARD_START = 21;
 const FULL_KEYBOARD_END = 108;
 const VISUAL_SLOTS = [
   { id: 'KeyA-natural', code: 'KeyA', sharp: false, noteName: 'C', keyLabel: 'a', kind: 'white', pitchClass: 0 },
-  { id: 'KeyA-sharp',   code: 'KeyA', sharp: true,  noteName: 'C#', keyLabel: '⇧a', kind: 'black', pitchClass: 1 },
+  { id: 'KeyW-sharp',   code: 'KeyW', anchorCode: 'KeyA', sharp: true,  noteName: 'C#', keyLabel: 'W', kind: 'black', pitchClass: 1 },
   { id: 'KeyS-natural', code: 'KeyS', sharp: false, noteName: 'D', keyLabel: 's', kind: 'white', pitchClass: 2 },
-  { id: 'KeyS-sharp',   code: 'KeyS', sharp: true,  noteName: 'D#', keyLabel: '⇧s', kind: 'black', pitchClass: 3 },
+  { id: 'KeyE-sharp',   code: 'KeyE', anchorCode: 'KeyS', sharp: true,  noteName: 'D#', keyLabel: 'E', kind: 'black', pitchClass: 3 },
   { id: 'KeyD-natural', code: 'KeyD', sharp: false, noteName: 'E', keyLabel: 'd', kind: 'white', pitchClass: 4 },
   { id: 'KeyJ-natural', code: 'KeyJ', sharp: false, noteName: 'F', keyLabel: 'j', kind: 'white', pitchClass: 5 },
-  { id: 'KeyJ-sharp',   code: 'KeyJ', sharp: true,  noteName: 'F#', keyLabel: '⇧j', kind: 'black', pitchClass: 6 },
+  { id: 'KeyI-sharp',   code: 'KeyI', anchorCode: 'KeyJ', sharp: true,  noteName: 'F#', keyLabel: 'I', kind: 'black', pitchClass: 6 },
   { id: 'KeyK-natural', code: 'KeyK', sharp: false, noteName: 'G', keyLabel: 'k', kind: 'white', pitchClass: 7 },
-  { id: 'KeyK-sharp',   code: 'KeyK', sharp: true,  noteName: 'G#', keyLabel: '⇧k', kind: 'black', pitchClass: 8 },
+  { id: 'KeyO-sharp',   code: 'KeyO', anchorCode: 'KeyK', sharp: true,  noteName: 'G#', keyLabel: 'O', kind: 'black', pitchClass: 8 },
   { id: 'KeyL-natural', code: 'KeyL', sharp: false, noteName: 'A', keyLabel: 'l', kind: 'white', pitchClass: 9 },
-  { id: 'KeyL-sharp',   code: 'KeyL', sharp: true,  noteName: 'A#', keyLabel: '⇧l', kind: 'black', pitchClass: 10 },
+  { id: 'KeyP-sharp',   code: 'KeyP', anchorCode: 'KeyL', sharp: true,  noteName: 'A#', keyLabel: 'P', kind: 'black', pitchClass: 10 },
   { id: 'Semicolon-natural', code: 'Semicolon', sharp: false, noteName: 'B', keyLabel: ';', kind: 'white', pitchClass: 11 },
 ];
 function pitchName(midi) { return NOTE_NAMES[midi % 12] + (Math.floor(midi/12)-1); }
@@ -734,6 +738,11 @@ let _fingeringJobPollTimer = null;
 const SCORE_LIBRARY_KEY = 'accompy_score_library_v1';
 const SCORE_LIBRARY_INIT_KEY = 'accompy_score_library_initialized_v1';
 const PLAY_SIDEBAR_COLLAPSED_KEY = 'accompy_play_sidebar_collapsed_v1';
+const PRACTICE_SPLIT_KEY = 'accompy_practice_split_v1';
+const SHELL_SPLIT_KEY = 'accompy_shell_split_px_v1';
+const PANEL_SPLIT_KEY = 'accompy_panel_split_px_v1';
+const PRACTICE_SPLITTER_SIZE = 12;
+const LAYOUT_SPLITTER_SIZE = 12;
 let _appConfig = { supabase_enabled: false, auth_enabled: false };
 let _authUser = null;
 const OPENING_GUIDE_LEAD_BEATS = 0.75;
@@ -763,6 +772,23 @@ function showScreen(id) {
   document.getElementById(id).classList.add('active');
 }
 
+function routeScoreName() {
+  const raw = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  if (!raw || raw.startsWith('api/')) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function updateScoreUrl(name, replace = false) {
+  const nextPath = name ? `/${encodeURIComponent(name)}` : '/';
+  if (window.location.pathname === nextPath) return;
+  const method = replace ? 'replaceState' : 'pushState';
+  window.history[method]({ score: name || null }, '', nextPath);
+}
+
 function applyPlaySidebarCollapsed(collapsed) {
   const shell = document.querySelector('#play-screen .play-shell');
   const toggle = document.getElementById('play-sidebar-toggle');
@@ -772,6 +798,7 @@ function applyPlaySidebarCollapsed(collapsed) {
   toggle.textContent = '☰';
   toggle.setAttribute('aria-label', normalized ? 'Expand piece sidebar' : 'Collapse piece sidebar');
   localStorage.setItem(PLAY_SIDEBAR_COLLAPSED_KEY, normalized ? '1' : '0');
+  applyShellSplit(localStorage.getItem(SHELL_SPLIT_KEY));
 }
 
 function togglePlaySidebar() {
@@ -847,6 +874,7 @@ async function signIn() {
     _authUser = result.user || null;
     updateAuthUI();
     await loadScoreList();
+    await openRouteFromLocation({ replace: true });
     setAuthStatus('Signed in.', 'success');
   } catch (error) {
     setAuthStatus(error.message || 'Sign in failed.', 'error');
@@ -868,6 +896,7 @@ async function signUp() {
     _authUser = result.user || null;
     updateAuthUI();
     await loadScoreList();
+    await openRouteFromLocation({ replace: true });
     setAuthStatus('Account created.', 'success');
   } catch (error) {
     setAuthStatus(error.message || 'Sign up failed.', 'error');
@@ -888,6 +917,8 @@ async function signOut() {
   state.sheetVariant = 'base';
   updateAuthUI();
   renderPlayPieceList();
+  updateScoreUrl(null, true);
+  showScreen('list-screen');
 }
 
 window.signIn = signIn;
@@ -978,9 +1009,223 @@ function applyKeyboardLayoutMode(mode) {
 function setKeyboardLayoutMode(mode) {
   applyKeyboardLayoutMode(mode);
   localStorage.setItem('accompy_keyboard_layout_mode', state.keyboardLayoutMode);
+  queuePracticeLayoutRender();
 }
 
 window.setKeyboardLayoutMode = setKeyboardLayoutMode;
+
+function queuePracticeLayoutRender() {
+  requestAnimationFrame(() => {
+    applySheetView();
+    renderNoteHighway();
+  });
+}
+
+function normalizedPracticeSplit(value) {
+  const numeric = Number.parseFloat(value);
+  if (!Number.isFinite(numeric)) return 50;
+  return Math.max(0, Math.min(100, numeric));
+}
+
+function applyPracticeSplit(value, persist = false) {
+  const workspace = document.getElementById('practice-workspace');
+  const splitter = document.getElementById('practice-splitter');
+  if (!workspace) return;
+  const normalized = normalizedPracticeSplit(value);
+  const splitterSize = splitter?.getBoundingClientRect().height || PRACTICE_SPLITTER_SIZE;
+  const available = Math.max(0, workspace.getBoundingClientRect().height - splitterSize);
+  const sheetPx = Math.round((available * normalized) / 100);
+  workspace.style.gridTemplateRows = `${sheetPx}px ${splitterSize}px minmax(0, 1fr)`;
+  if (splitter) splitter.setAttribute('aria-valuenow', String(Math.round(normalized)));
+  if (persist) localStorage.setItem(PRACTICE_SPLIT_KEY, String(normalized));
+  queuePracticeLayoutRender();
+}
+
+function setPracticeSplit(value) {
+  applyPracticeSplit(value, true);
+}
+
+function normalizedPixels(value, fallback, min, max) {
+  const numeric = Number.parseFloat(value);
+  const safe = Number.isFinite(numeric) ? numeric : fallback;
+  return Math.max(min, Math.min(max, safe));
+}
+
+function queueLayoutRender() {
+  requestAnimationFrame(() => {
+    applyPracticeSplit(localStorage.getItem(PRACTICE_SPLIT_KEY));
+    applySheetView();
+    renderNoteHighway();
+  });
+}
+
+function applyShellSplit(value, persist = false) {
+  const shell = document.querySelector('#play-screen .play-shell');
+  const splitter = document.getElementById('shell-splitter');
+  if (!shell) return;
+  const expandedWidth = normalizedPixels(value, 260, 180, 420);
+  const isCollapsed = shell.dataset.sidebar === 'collapsed';
+  const width = isCollapsed ? 58 : expandedWidth;
+  shell.style.gridTemplateColumns = `${width}px ${LAYOUT_SPLITTER_SIZE}px minmax(0, 1fr)`;
+  if (splitter) splitter.setAttribute('aria-valuenow', String(Math.round(expandedWidth)));
+  if (persist && !isCollapsed) localStorage.setItem(SHELL_SPLIT_KEY, String(expandedWidth));
+  queueLayoutRender();
+}
+
+function applyPanelSplit(value, persist = false) {
+  const area = document.querySelector('.practice-area');
+  const splitter = document.getElementById('panel-splitter');
+  if (!area) return;
+  const rect = area.getBoundingClientRect();
+  const maxByContainer = rect.width
+    ? Math.max(260, rect.width - LAYOUT_SPLITTER_SIZE - 420)
+    : 520;
+  const max = Math.min(520, maxByContainer);
+  const width = normalizedPixels(value, 320, 260, max);
+  area.style.gridTemplateColumns = `minmax(0, 1fr) ${LAYOUT_SPLITTER_SIZE}px ${width}px`;
+  if (splitter) splitter.setAttribute('aria-valuenow', String(Math.round(width)));
+  if (persist) localStorage.setItem(PANEL_SPLIT_KEY, String(width));
+  queueLayoutRender();
+}
+
+function initLayoutSplitter({
+  id,
+  currentValue,
+  applyValue,
+  valueFromPointer,
+  step = 12,
+  min,
+  max,
+  onStart,
+}) {
+  const splitter = document.getElementById(id);
+  if (!splitter || splitter.dataset.bound === '1') return;
+  splitter.dataset.bound = '1';
+  let dragging = false;
+
+  const moveTo = (clientX) => applyValue(valueFromPointer(clientX), true);
+
+  splitter.addEventListener('pointerdown', (event) => {
+    onStart?.();
+    dragging = true;
+    document.body.classList.add('layout-resizing');
+    splitter.setPointerCapture?.(event.pointerId);
+    moveTo(event.clientX);
+    event.preventDefault();
+  });
+
+  window.addEventListener('pointermove', (event) => {
+    if (dragging) moveTo(event.clientX);
+  });
+
+  window.addEventListener('pointerup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('layout-resizing');
+  });
+
+  splitter.addEventListener('keydown', (event) => {
+    let next = null;
+    if (event.key === 'ArrowLeft') next = currentValue() - step;
+    if (event.key === 'ArrowRight') next = currentValue() + step;
+    if (event.key === 'PageUp') next = currentValue() - step * 4;
+    if (event.key === 'PageDown') next = currentValue() + step * 4;
+    if (event.key === 'Home') next = min;
+    if (event.key === 'End') next = max;
+    if (next === null) return;
+    onStart?.();
+    applyValue(next, true);
+    event.preventDefault();
+  });
+}
+
+function initHorizontalSplitters() {
+  initLayoutSplitter({
+    id: 'shell-splitter',
+    currentValue: () => normalizedPixels(localStorage.getItem(SHELL_SPLIT_KEY), 260, 180, 420),
+    applyValue: applyShellSplit,
+    valueFromPointer: (clientX) => {
+      const shell = document.querySelector('#play-screen .play-shell');
+      const rect = shell?.getBoundingClientRect();
+      return rect ? clientX - rect.left - LAYOUT_SPLITTER_SIZE / 2 : 260;
+    },
+    min: 180,
+    max: 420,
+    onStart: () => {
+      const shell = document.querySelector('#play-screen .play-shell');
+      if (shell?.dataset.sidebar === 'collapsed') applyPlaySidebarCollapsed(false);
+    },
+  });
+
+  initLayoutSplitter({
+    id: 'panel-splitter',
+    currentValue: () => normalizedPixels(localStorage.getItem(PANEL_SPLIT_KEY), 320, 260, 520),
+    applyValue: applyPanelSplit,
+    valueFromPointer: (clientX) => {
+      const area = document.querySelector('.practice-area');
+      const rect = area?.getBoundingClientRect();
+      return rect ? rect.right - clientX - LAYOUT_SPLITTER_SIZE / 2 : 320;
+    },
+    min: 260,
+    max: 520,
+  });
+
+  applyShellSplit(localStorage.getItem(SHELL_SPLIT_KEY));
+  applyPanelSplit(localStorage.getItem(PANEL_SPLIT_KEY));
+}
+
+function practiceSplitFromClientY(clientY) {
+  const workspace = document.getElementById('practice-workspace');
+  const splitter = document.getElementById('practice-splitter');
+  if (!workspace) return 50;
+  const rect = workspace.getBoundingClientRect();
+  const splitterSize = splitter?.getBoundingClientRect().height || PRACTICE_SPLITTER_SIZE;
+  const available = Math.max(1, rect.height - splitterSize);
+  return ((clientY - rect.top - splitterSize / 2) / available) * 100;
+}
+
+function initPracticeSplitter() {
+  const splitter = document.getElementById('practice-splitter');
+  if (!splitter || splitter.dataset.bound === '1') return;
+  splitter.dataset.bound = '1';
+  let dragging = false;
+
+  const currentValue = () => normalizedPracticeSplit(localStorage.getItem(PRACTICE_SPLIT_KEY));
+  const moveTo = (clientY) => setPracticeSplit(practiceSplitFromClientY(clientY));
+
+  splitter.addEventListener('pointerdown', (event) => {
+    dragging = true;
+    document.body.classList.add('practice-resizing');
+    splitter.setPointerCapture?.(event.pointerId);
+    moveTo(event.clientY);
+    event.preventDefault();
+  });
+
+  window.addEventListener('pointermove', (event) => {
+    if (dragging) moveTo(event.clientY);
+  });
+
+  window.addEventListener('pointerup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('practice-resizing');
+  });
+
+  splitter.addEventListener('keydown', (event) => {
+    let next = null;
+    if (event.key === 'ArrowUp') next = currentValue() - 3;
+    if (event.key === 'ArrowDown') next = currentValue() + 3;
+    if (event.key === 'PageUp') next = currentValue() - 10;
+    if (event.key === 'PageDown') next = currentValue() + 10;
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = 100;
+    if (next === null) return;
+    setPracticeSplit(next);
+    event.preventDefault();
+  });
+
+  applyPracticeSplit(currentValue());
+}
 
 function initKeyboardLayoutToggle() {
   document.getElementById('keyboard-view-full')?.addEventListener('click', () => setKeyboardLayoutMode('full'));
@@ -1611,6 +1856,7 @@ async function fetchScore(name) {
 async function openScore(name, options = {}) {
   const preserveSelectedPart = !!options.preserveSelectedPart;
   const preserveSheetVariant = !!options.preserveSheetVariant;
+  const updateUrl = options.updateUrl !== false;
   const reveal = options.reveal !== false;
   if (state.playing && state.current?.name !== name) stopPlaying();
   clearFingeringJobPolling();
@@ -1629,11 +1875,11 @@ async function openScore(name, options = {}) {
   _stopMic();
   setInputMode('keyboard');
 
-  document.getElementById('play-title').textContent = data.title || formatName(name);
   document.getElementById('progress-fill').style.width = '0%';
   document.getElementById('next-note-display').textContent = '—';
   document.getElementById('beat-val').textContent  = '—';
   document.getElementById('tempo-val').textContent = '—';
+  updatePracticePanelStatus();
 
   resetSheetView();
   await renderScoreSheet();
@@ -1667,7 +1913,9 @@ async function openScore(name, options = {}) {
   syncExpectedMicNote();
   preloadCurrentScoreInstruments();
   renderPlayPieceList();
+  if (updateUrl) updateScoreUrl(name);
   if (reveal) showScreen('play-screen');
+  applyPracticeSplit(localStorage.getItem(PRACTICE_SPLIT_KEY));
   state.paused = false;
   state.pausedBeat = 0;
   state.pausedBps = 1;
@@ -1676,6 +1924,26 @@ async function openScore(name, options = {}) {
   document.getElementById('start-btn').classList.add('btn-primary');
   document.getElementById('stop-btn').disabled  = true;
 }
+
+async function openRouteFromLocation(options = {}) {
+  const name = routeScoreName();
+  if (!name) {
+    if (options.replace) updateScoreUrl(null, true);
+    showScreen('list-screen');
+    return;
+  }
+  try {
+    await openScore(name, { updateUrl: false });
+    if (options.replace) updateScoreUrl(name, true);
+  } catch (error) {
+    console.warn(`Could not open score from route "${name}":`, error);
+    showScreen('list-screen');
+  }
+}
+
+window.addEventListener('popstate', () => {
+  openRouteFromLocation({ replace: false });
+});
 
 async function selectPart(idx) {
   state.selectedPart = idx;
@@ -1833,17 +2101,14 @@ function expectedKeyboardPitch() {
   return leadPitchFromEvent(rightHand[position] ?? rightHand[0]) ?? 60;
 }
 
-function resolveTypedMidi(code, shifted = false) {
-  const layout = SIMPLE_KEY_LAYOUT[code];
-  if (!layout) return undefined;
-  const pitchClass = (layout.natural + (shifted && SHARPABLE_CODES.has(code) ? 1 : 0)) % 12;
+function resolveKeyboardPitchesForPitchClass(pitchClass) {
   const rightHand = getRightHand();
   const position = state.tracker?.position ?? 0;
   const expectedEvent = rightHand[position] ?? rightHand[0];
   const expectedPitches = eventPitches(expectedEvent);
-
-  const exactMatch = expectedPitches.find((pitch) => pitch % 12 === pitchClass);
-  if (exactMatch !== undefined) return exactMatch;
+  const exactMatches = expectedPitches.filter((pitch) => pitch % 12 === pitchClass);
+  if (exactMatches.length === 1) return exactMatches[0];
+  if (exactMatches.length > 1) return exactMatches;
 
   const target = expectedKeyboardPitch();
 
@@ -1853,6 +2118,12 @@ function resolveTypedMidi(code, shifted = false) {
   while (midi < 24) midi += 12;
   while (midi > 108) midi -= 12;
   return midi;
+}
+
+function resolveTypedMidi(code) {
+  const layout = SIMPLE_KEY_LAYOUT[code];
+  if (!layout) return undefined;
+  return resolveKeyboardPitchesForPitchClass(layout.pitchClass);
 }
 
 function cueKeyIdForMidi(midi) {
@@ -2039,7 +2310,7 @@ function buildKeyboard(rightHand) {
   const row = document.getElementById('kb-row-main');
   row.innerHTML = SIMPLE_KEY_ORDER.map((code) => {
     const naturalSlot = VISUAL_SLOTS.find((slot) => slot.code === code && !slot.sharp);
-    const sharpSlot = VISUAL_SLOTS.find((slot) => slot.code === code && slot.sharp);
+    const sharpSlot = VISUAL_SLOTS.find((slot) => slot.anchorCode === code && slot.sharp);
     const naturalIsNext = naturalSlot && nextPitches.some((pitch) => pitch % 12 === naturalSlot.pitchClass);
     const sharpIsNext = sharpSlot && nextPitches.some((pitch) => pitch % 12 === sharpSlot.pitchClass);
 
@@ -2193,6 +2464,7 @@ async function startPlaying() {
   stopBtn.textContent = '■ End';
 
   updateNextKey(right, 0);
+  updatePracticePanelStatus();
   updateSheetHighlight(0);
   startNoteHighwayLoop();
   enableMidi();
@@ -2216,6 +2488,7 @@ function togglePausePlaying() {
     updateSheetHighlight(state.pausedBeat);
     renderNoteHighway();
     startBtn.textContent = '▶ Resume';
+    updatePracticePanelStatus();
     return;
   }
 
@@ -2225,6 +2498,7 @@ function togglePausePlaying() {
   _noteHighwayBps = state.pausedBps ?? (state.tracker?.bps?.() ?? 1);
   state.accompanist?.resume(_noteHighwayStartBeat, _noteHighwayBps);
   startBtn.textContent = '❚❚ Pause';
+  updatePracticePanelStatus();
   startNoteHighwayLoop();
   if (_inputMode === 'mic') _startMic();
   syncExpectedMicNote();
@@ -2253,6 +2527,7 @@ function stopPlaying(reason = 'stopped') {
     document.getElementById('next-note-display').textContent = '—';
   }
   if (typeof _pitchDetector?.setExpectedMidi === 'function') _pitchDetector.setExpectedMidi(null);
+  updatePracticePanelStatus();
   renderNoteHighway();
 }
 
@@ -2309,6 +2584,11 @@ function handleNote(midi) {
   if (state.tracker.isFinished()) stopPlaying('finished');
 }
 
+function handleKeyboardInput(midiOrPitches) {
+  const pitches = Array.isArray(midiOrPitches) ? midiOrPitches : [midiOrPitches];
+  pitches.forEach((midi) => handleNote(midi));
+}
+
 function handleMidiNote(midi) {
   if (!state.playing || state.paused || !state.tracker) return;
   const now = performance.now();
@@ -2345,18 +2625,32 @@ let _pitchDetector    = null;
 let _selectedMicId    = null;
 let _selectedSpeakerId = null;
 
+function updatePracticePanelStatus() {
+  const inputStatus = document.getElementById('practice-input-status');
+  if (inputStatus) {
+    inputStatus.textContent = _inputMode === 'mic' ? 'Microphone' : 'Keyboard';
+  }
+
+  const followingStatus = document.getElementById('practice-following-status');
+  if (followingStatus) {
+    followingStatus.textContent = state.playing
+      ? (state.paused ? 'Paused' : 'Following')
+      : 'Ready';
+  }
+}
+
 function setInputMode(mode) {
   _inputMode = mode;
   document.getElementById('tab-keyboard').classList.toggle('active', mode === 'keyboard');
   document.getElementById('tab-mic').classList.toggle('active', mode === 'mic');
   document.getElementById('mic-controls').style.display    = mode === 'mic' ? 'block' : 'none';
-  document.getElementById('keyboard-section').style.display = mode === 'keyboard' ? 'block' : 'none';
 
   if (mode === 'mic') {
     _startMic();
   } else {
     _stopMic();
   }
+  updatePracticePanelStatus();
 }
 
 function onNoiseGateChange(val) {
@@ -2498,8 +2792,8 @@ function _stopMic() {
 document.addEventListener('keydown', e => {
   if (e.repeat) return;
   if (['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
-  const midi = resolveTypedMidi(e.code, e.shiftKey);
-  if (midi !== undefined) { e.preventDefault(); handleNote(midi); }
+  const midi = resolveTypedMidi(e.code);
+  if (midi !== undefined) { e.preventDefault(); handleKeyboardInput(midi); }
 });
 
 // ── Web MIDI input ────────────────────────────────────────────────────────────
@@ -2566,8 +2860,14 @@ if (savedScoreGridColumns) {
 state.keyboardLayoutMode = localStorage.getItem('accompy_keyboard_layout_mode') === 'mini' ? 'mini' : 'full';
 applyScoreGridColumns(state.scoreGridColumns);
 applyKeyboardLayoutMode(state.keyboardLayoutMode);
+initPracticeSplitter();
 applyTheme(localStorage.getItem('accompy_theme') || 'dark');
-window.addEventListener('resize', resizeScorePreviews);
+window.addEventListener('resize', () => {
+  resizeScorePreviews();
+  applyShellSplit(localStorage.getItem(SHELL_SPLIT_KEY));
+  applyPanelSplit(localStorage.getItem(PANEL_SPLIT_KEY));
+  applyPracticeSplit(localStorage.getItem(PRACTICE_SPLIT_KEY));
+});
 
 // ── Click-to-play on keyboard keys ───────────────────────────────────────────
 function midiFromKeyboardEl(el) {
@@ -2580,7 +2880,7 @@ function midiFromKeyboardEl(el) {
   if (kbKey?.id?.startsWith('kbslot-')) {
     const slotId = kbKey.id.slice('kbslot-'.length);
     const slot = VISUAL_SLOTS.find((s) => s.id === slotId);
-    if (slot) return { midi: 60 + slot.pitchClass, highlightId: kbKey.id };
+    if (slot) return { midi: resolveKeyboardPitchesForPitchClass(slot.pitchClass), highlightId: kbKey.id };
   }
   return null;
 }
@@ -2593,17 +2893,22 @@ if (_keyboardSectionEl) {
     if (typeof Tone !== 'undefined' && Tone.start) Tone.start().catch(() => {});
     if (state.playing && !state.paused && state.tracker) {
       // Same flow as a physical keypress — plays the note and advances the tracker.
-      handleNote(hit.midi);
+      handleKeyboardInput(hit.midi);
       return;
     }
     // Preview mode — piece isn't running; just play the note + flash the key.
     const instrument = getInstrumentForPart(state.selectedPart ?? 0);
     const sampledInstrument = SAMPLE_ALIAS[instrument] || instrument;
-    if (_sampleSamplers[sampledInstrument]) {
-      playNote(hit.midi, 0.6, instrument, { duration: 0.45 });
-    } else {
-      playSynthNote(hit.midi, 0.6, 'piano', { duration: 0.45 });
-    }
+    const pitches = Array.isArray(hit.midi) ? hit.midi : [hit.midi];
+    pitches.forEach((midi) => {
+      if (_sampleSamplers[sampledInstrument]) {
+        playNote(midi, 0.6, instrument, { duration: 0.45 });
+      } else {
+        playSynthNote(midi, 0.6, 'piano', { duration: 0.45 });
+      }
+      highlightKey(`refkey-${midi}`, true);
+      setTimeout(() => highlightKey(`refkey-${midi}`, false), 180);
+    });
     highlightKey(hit.highlightId, true);
     setTimeout(() => highlightKey(hit.highlightId, false), 180);
   });
@@ -2756,8 +3061,12 @@ initLatencyControls();
 initImportControls();
 initKeyboardLayoutToggle();
 initPlaySidebar();
+initHorizontalSplitters();
 onNoiseGateChange(document.getElementById('noise-gate')?.value || '1');
 setLatencyCompensation(localStorage.getItem('accompy_latency_comp_ms') || '0');
-initAppConfig().then(() => {
-  if (!_appConfig.auth_enabled || _authUser) loadScoreList();
+initAppConfig().then(async () => {
+  if (!_appConfig.auth_enabled || _authUser) {
+    await loadScoreList();
+    await openRouteFromLocation({ replace: true });
+  }
 });
