@@ -40,6 +40,34 @@ def build_fingering_state(parts_data: list[dict]) -> dict:
     }
 
 
+def normalize_fingering_state(
+    parts_data: list[dict],
+    existing: dict | None = None,
+    *,
+    has_fingered_sheet: bool = False,
+) -> dict:
+    metadata = build_fingering_state(parts_data)
+    if isinstance(existing, dict):
+        for key in ("hand_size", "annotations", "reason"):
+            if key in existing:
+                metadata[key] = existing[key]
+
+    if has_fingered_sheet:
+        metadata["applied"] = True
+        metadata["reason"] = "generated"
+    elif not metadata["eligible"]:
+        metadata["reason"] = "unsupported_parts"
+    elif not metadata["available"]:
+        metadata["reason"] = "missing_dependency"
+    else:
+        metadata["reason"] = "not_generated"
+
+    if not metadata["applied"]:
+        metadata["annotations"] = 0
+
+    return metadata
+
+
 def _count_fingering_annotations(path: str | Path) -> int:
     tree = ET.parse(path)
     count = 0

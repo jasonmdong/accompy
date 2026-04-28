@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import requests
 from fastapi import HTTPException
-from src.fingering import build_fingering_state
+from src.fingering import normalize_fingering_state
 
 
 def _score_row_to_payload(row: dict) -> dict:
@@ -13,7 +13,6 @@ def _score_row_to_payload(row: dict) -> dict:
     musicxml_source = score_data.get("musicxml_source") or ""
     fingered_musicxml_source = score_data.get("fingered_musicxml_source") or ""
     fingered_sheet_html = score_data.get("fingered_sheet_html") or ""
-    fingering = score_data.get("fingering") or build_fingering_state(parts)
     right_hand = parts[0]["notes"] if parts else []
     left_hand = []
     for part in parts[1:]:
@@ -28,9 +27,11 @@ def _score_row_to_payload(row: dict) -> dict:
     sheet_html = row.get("sheet_html") or ""
     has_sheet = "<svg" in sheet_html or bool(musicxml_source)
     has_fingered_sheet = "<svg" in fingered_sheet_html or bool(fingered_musicxml_source)
-    if has_fingered_sheet:
-        fingering["applied"] = True
-        fingering["reason"] = fingering.get("reason") or "generated"
+    fingering = normalize_fingering_state(
+        parts,
+        score_data.get("fingering"),
+        has_fingered_sheet=has_fingered_sheet,
+    )
     return {
         "name": row.get("slug") or row.get("id"),
         "title": row.get("title") or row.get("slug") or row.get("id"),

@@ -30,7 +30,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from src.env import load_local_env
 from src.convert_score import convert_score_source, render_html, slugify_score_name
-from src.fingering import apply_auto_fingering, build_fingering_state
+from src.fingering import apply_auto_fingering, normalize_fingering_state
 from src.paths import get_static_dir
 from src.storage import create_score_store, SupabaseScoreStore, _score_row_to_payload
 
@@ -174,15 +174,19 @@ def score_name_from_input(raw: str) -> str:
 
 def ensure_fingering_state(score: dict) -> dict:
     normalized = dict(score)
-    fingering = normalized.get("fingering") or build_fingering_state(normalized.get("parts") or [])
-    if normalized.get("fingered_musicxml_source"):
-        fingering["applied"] = True
-        fingering["reason"] = "generated"
+    has_fingered_sheet = bool(
+        normalized.get("has_fingered_sheet")
+        or normalized.get("fingered_musicxml_source")
+        or normalized.get("fingered_sheet_html")
+    )
+    fingering = normalize_fingering_state(
+        normalized.get("parts") or [],
+        normalized.get("fingering"),
+        has_fingered_sheet=has_fingered_sheet,
+    )
     normalized["fingering"] = fingering
     normalized["has_sheet"] = bool(normalized.get("has_sheet") or normalized.get("musicxml_source"))
-    normalized["has_fingered_sheet"] = bool(
-        normalized.get("has_fingered_sheet") or normalized.get("fingered_musicxml_source")
-    )
+    normalized["has_fingered_sheet"] = has_fingered_sheet
     return normalized
 
 
