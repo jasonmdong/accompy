@@ -8,7 +8,7 @@ app_port: 7860
 pinned: false
 ---
 
-# Accompy
+# NotePilot
 
 A real-time accompanist (for now for piano ideally lol). Select right/left hand, then accompy tracks your tempo and accompanies automatically. Demo available [here](https://jasonmdong-accompy.hf.space/).
 
