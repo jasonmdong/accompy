@@ -24,7 +24,9 @@
         <span id="nav-auth-username"></span>
         <button class="btn btn-ghost nav-logout-btn" type="button" onclick="signOut()">Log out</button>
       </div>
-      <button id="theme-toggle" class="theme-toggle" data-theme-toggle onclick="toggleTheme()" aria-label="Toggle light and dark mode">Light</button>
+      <button id="theme-toggle" class="theme-toggle" data-theme-toggle onclick="toggleTheme()" aria-label="Switch to light mode">
+        <span class="theme-icon" aria-hidden="true"></span>
+      </button>
     </div>
   </header>
   <div id="auth-panel" class="auth-panel">
@@ -32,11 +34,6 @@
       <h3>Sign in</h3>
       <p class="auth-copy">Create an account or sign in to keep your own piece library.</p>
       <div class="auth-form">
-        <button id="google-signin-btn" class="btn google-signin-btn" type="button" onclick="signInWithGoogle()">
-          <span aria-hidden="true">G</span>
-          Continue with Google
-        </button>
-        <div id="google-auth-divider" class="auth-divider"><span>or</span></div>
         <input id="auth-email" type="text" placeholder="Username">
         <input id="auth-password" type="password" placeholder="Password">
         <div class="auth-actions">
@@ -44,6 +41,11 @@
           <button class="btn btn-ghost" type="button" onclick="signUp()">Sign up</button>
           <button class="btn btn-ghost guest-signin-btn" type="button" onclick="continueAsGuest()">Continue as Guest</button>
         </div>
+        <div id="google-auth-divider" class="auth-divider"><span>or</span></div>
+        <button id="google-signin-btn" class="btn google-signin-btn" type="button" onclick="signInWithGoogle()">
+          <span aria-hidden="true">G</span>
+          Continue with Google
+        </button>
         <div id="auth-status" class="auth-status">Loading sign-in…</div>
       </div>
     </div>
@@ -168,7 +170,9 @@
         <span class="sidebar-brand-word">Note<span>Pilot</span></span>
       </button>
       <div class="sidebar-footer-actions">
-        <button class="theme-toggle sidebar-theme-toggle" data-theme-toggle onclick="toggleTheme()" aria-label="Toggle light and dark mode">Light</button>
+        <button class="theme-toggle sidebar-theme-toggle" data-theme-toggle onclick="toggleTheme()" aria-label="Switch to light mode">
+          <span class="theme-icon" aria-hidden="true"></span>
+        </button>
         <div class="sidebar-account-menu">
           <button
             id="sidebar-account-btn"
@@ -278,6 +282,7 @@
       </div>
     </div>
     <div class="piano-stage">
+      <div id="keyboard-loading" class="keyboard-loading" style="display:none">Loading piece…</div>
       <div class="mini-keyboard-panel" id="mini-keyboard-panel">
         <div id="note-highway" class="note-highway"></div>
         <div class="kb-layout" id="mini-keyboard-layout">

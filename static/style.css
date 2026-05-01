@@ -47,6 +47,7 @@ body {
     var(--bg);
   color: var(--text);
   min-height: 100vh;
+  overflow-x: clip;
 }
 
 /* ── Header ── */
@@ -146,9 +147,55 @@ body:not(.light) .brand-mark-note {
   background: var(--panel);
   color: var(--text);
   border-radius: 999px;
-  padding: .42rem .85rem;
-  font-size: .8rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .95rem;
+  line-height: 1;
   cursor: pointer;
+}
+
+.theme-icon {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  display: inline-block;
+  border-radius: 50%;
+}
+
+.theme-icon::before,
+.theme-icon::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.theme-toggle[data-icon="sun"] .theme-icon {
+  background: #fff;
+  box-shadow:
+    0 -8px 0 -6px #fff,
+    0 8px 0 -6px #fff,
+    8px 0 0 -6px #fff,
+    -8px 0 0 -6px #fff,
+    5.7px 5.7px 0 -6px #fff,
+    -5.7px 5.7px 0 -6px #fff,
+    5.7px -5.7px 0 -6px #fff,
+    -5.7px -5.7px 0 -6px #fff;
+}
+
+.theme-toggle[data-icon="moon"] .theme-icon {
+  background: #111318;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+.theme-toggle[data-icon="moon"] .theme-icon::after {
+  inset: 0 0 0 5px;
+  border-radius: 50%;
+  background: var(--panel);
 }
 
 .top-nav-actions {
@@ -797,8 +844,10 @@ body.auth-mode .score-grid {
 
 .sidebar-theme-toggle {
   flex: 0 0 auto;
-  padding: .34rem .65rem;
-  font-size: .72rem;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: .82rem;
 }
 
 .sidebar-footer-actions {
@@ -1319,10 +1368,25 @@ body.auth-mode .score-grid {
   opacity: 1;
 }
 .piano-stage {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: linear-gradient(to bottom, color-mix(in srgb, var(--panel-alt) 60%, transparent), var(--panel));
   overflow: hidden;
+}
+
+.keyboard-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  place-items: center;
+  background:
+    radial-gradient(ellipse at 50% 65%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 48%),
+    color-mix(in srgb, var(--panel) 86%, transparent);
+  color: var(--muted);
+  font-size: .92rem;
+  font-weight: 750;
+  letter-spacing: .01em;
 }
 .note-highway {
   position: relative;
@@ -1331,11 +1395,33 @@ body.auth-mode .score-grid {
   gap: .2rem;
   height: 210px;
   padding: .65rem .65rem 0;
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--panel-alt) 86%, transparent), color-mix(in srgb, var(--surface) 78%, transparent));
+  background:
+    radial-gradient(ellipse at 50% 105%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 42%),
+    linear-gradient(to bottom, color-mix(in srgb, var(--panel-alt) 95%, var(--accent) 5%), color-mix(in srgb, var(--surface) 84%, #000 16%)),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 31px,
+      color-mix(in srgb, var(--border) 42%, transparent) 32px
+    );
   border-bottom: 1px solid var(--border);
+  box-shadow: inset 0 16px 32px rgba(0,0,0,.18);
+  isolation: isolate;
+}
+.note-highway::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, color-mix(in srgb, var(--accent) 10%, transparent), transparent 14%, transparent 86%, color-mix(in srgb, var(--accent) 10%, transparent)),
+    linear-gradient(to bottom, rgba(255,255,255,.06), transparent 24%, transparent 72%, rgba(255,255,255,.05));
+  opacity: .75;
+  z-index: 0;
 }
 .note-lane {
   position: relative;
+  z-index: 1;
   border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--surface) 35%, transparent));
@@ -1363,9 +1449,11 @@ body.auth-mode .score-grid {
   border-radius: 99px;
   background: color-mix(in srgb, var(--accent) 68%, white);
   box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 32%, transparent);
+  z-index: 2;
 }
 .note-bar {
   position: absolute;
+  z-index: 3;
   left: 8px;
   right: 8px;
   border-radius: 6px;
@@ -1460,7 +1548,14 @@ body.auth-mode .score-grid {
   border-radius: 10px;
   overflow: hidden;
   background:
-    linear-gradient(to bottom, color-mix(in srgb, var(--panel-alt) 92%, transparent), color-mix(in srgb, var(--surface) 80%, transparent)),
+    radial-gradient(ellipse at 50% 105%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 40%),
+    linear-gradient(to bottom, color-mix(in srgb, var(--panel-alt) 96%, var(--accent) 4%), color-mix(in srgb, var(--surface) 82%, #000 18%)),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 31px,
+      color-mix(in srgb, var(--border) 38%, transparent) 32px
+    ),
     repeating-linear-gradient(
       to right,
       color-mix(in srgb, var(--border) 42%, transparent) 0,
@@ -1469,6 +1564,17 @@ body.auth-mode .score-grid {
       transparent calc(100% / 52)
     );
   border: 1px solid var(--border);
+  box-shadow: inset 0 16px 34px rgba(0,0,0,.2);
+}
+.full-note-highway::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, color-mix(in srgb, var(--accent) 10%, transparent), transparent 12%, transparent 88%, color-mix(in srgb, var(--accent) 10%, transparent)),
+    linear-gradient(to bottom, rgba(255,255,255,.06), transparent 25%, transparent 72%, rgba(255,255,255,.05));
+  opacity: .72;
 }
 .full-note-hit-line {
   position: absolute;
@@ -1479,9 +1585,11 @@ body.auth-mode .score-grid {
   border-radius: 99px;
   background: color-mix(in srgb, var(--accent) 68%, white);
   box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 32%, transparent);
+  z-index: 2;
 }
 .full-note-bar {
   position: absolute;
+  z-index: 3;
   border-radius: 6px;
   background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 88%, white), var(--accent));
   border: 1px solid color-mix(in srgb, var(--accent) 52%, white);
@@ -2375,6 +2483,7 @@ body.practice-resizing {
 }
 
 .piano-stage {
+  position: relative;
   border-radius: 8px;
   flex: 1;
   min-height: 0;

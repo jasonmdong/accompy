@@ -287,9 +287,13 @@ function eventPedalHoldSeconds(event, bps = currentBps()) {
 function eventDurationSeconds(event, instrument = 'piano', fallbackBeats = 0.75) {
   const beats = eventDuration(event, fallbackBeats);
   const seconds = beats / Math.max(0.5, currentBps());
-  const familyBoost = ['violin', 'viola', 'cello', 'strings'].includes(instrument) ? 1.08 : 1.0;
   const pianoBoost = instrument === 'piano' ? 1.22 : 1.0;
-  return Math.max(0.14, Math.min(10, seconds * familyBoost * pianoBoost));
+  return Math.max(0.14, seconds * pianoBoost);
+}
+
+function isSustainedStringInstrument(instrument) {
+  const normalized = String(instrument || '').trim().toLowerCase();
+  return ['violin', 'viola', 'cello', 'strings', 'string ensemble'].includes(normalized);
 }
 
 function ensurePedalResonanceBus() {
@@ -382,6 +386,7 @@ function playPedalResonance(pitches, velocity = 0.5, opts = {}) {
 
 async function ensureSamplePlayback(instruments = []) {
   const requested = [...new Set(instruments
+    .filter(ins => !isSustainedStringInstrument(ins))
     .map(ins => SAMPLE_ALIAS[ins] || ins)
     .filter(ins => SAMPLE_LIBRARY[ins]))];
   if (!requested.length || typeof Tone === 'undefined') return false;
@@ -423,6 +428,7 @@ async function ensureSamplePlayback(instruments = []) {
 }
 
 function isSampleBackedInstrument(instrument) {
+  if (isSustainedStringInstrument(instrument)) return false;
   const sampledInstrument = SAMPLE_ALIAS[instrument] || instrument;
   return !!SAMPLE_LIBRARY[sampledInstrument];
 }
@@ -451,16 +457,26 @@ async function preloadCurrentScoreInstruments() {
 function playSynthNote(midi, velocity = 0.6, instrument = 'piano', opts = {}) {
   const ctx    = audioCtx();
   const freq   = 440 * Math.pow(2, (midi - 69) / 12);
-  const preset = INSTRUMENT_PRESETS[instrument] || INSTRUMENT_PRESETS.piano;
+  const presetName = String(instrument || '').trim().toLowerCase() === 'string ensemble' ? 'strings' : instrument;
+  const preset = INSTRUMENT_PRESETS[presetName] || INSTRUMENT_PRESETS.piano;
   const now    = ctx.currentTime;
   const baseDur = instrument === 'piano' ? 0.55 : 0.5;
   const dur    = Math.max(0.12, opts.duration ?? noteDurationSeconds(instrument, baseDur));
+  const sustained = isSustainedStringInstrument(instrument);
+  const release = sustained ? Math.min(0.28, Math.max(0.06, dur * 0.08)) : dur;
+  const releaseStart = sustained ? Math.max(now + preset.attack + 0.02, now + dur - release) : now + preset.attack;
+  const peak = velocity * 0.35;
 
   const masterGain = ctx.createGain();
   masterGain.connect(ctx.destination);
   masterGain.gain.setValueAtTime(0, now);
-  masterGain.gain.linearRampToValueAtTime(velocity * 0.35, now + preset.attack);
-  masterGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  masterGain.gain.linearRampToValueAtTime(peak, now + preset.attack);
+  if (sustained) {
+    masterGain.gain.setValueAtTime(peak, releaseStart);
+    masterGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  } else {
+    masterGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  }
 
   preset.harmonics.forEach(([mult, amp]) => {
     const osc = ctx.createOscillator();
@@ -499,6 +515,10 @@ function playSynthNote(midi, velocity = 0.6, instrument = 'piano', opts = {}) {
 }
 
 function playNote(midi, velocity = 0.6, instrument = 'piano', opts = {}) {
+  if (isSustainedStringInstrument(instrument)) {
+    playSynthNote(midi, velocity, instrument, { ...opts, preferSynth: true });
+    return;
+  }
   const sampledInstrument = SAMPLE_ALIAS[instrument] || instrument;
   const sampler = _sampleSamplers[sampledInstrument];
   if (sampler && !opts.preferSynth) {
@@ -1727,7 +1747,10 @@ function applyTheme(theme) {
   const normalized = theme === 'light' ? 'light' : 'dark';
   document.body.classList.toggle('light', normalized === 'light');
   document.querySelectorAll('[data-theme-toggle]').forEach((toggle) => {
-    toggle.textContent = normalized === 'light' ? 'Dark' : 'Light';
+    const nextTheme = normalized === 'light' ? 'dark' : 'light';
+    toggle.dataset.icon = normalized === 'light' ? 'moon' : 'sun';
+    toggle.setAttribute('aria-label', `Switch to ${nextTheme} mode`);
+    toggle.title = `Switch to ${nextTheme} mode`;
   });
   localStorage.setItem('accompy_theme', normalized);
   document.querySelectorAll('#sheet-frame, .score-preview-frame').forEach((frame) => sanitizeSheetFrame(frame));
@@ -2444,6 +2467,36 @@ function addGuestAnnotation(text) {
 
 window.addGuestAnnotation = addGuestAnnotation;
 
+function setPieceLoadingUI(loading, name = '') {
+  const placeholder = document.getElementById('sheet-placeholder');
+  const frame = document.getElementById('sheet-frame');
+  const fallback = document.getElementById('sheet-musicxml-fallback');
+  const keyboardLoading = document.getElementById('keyboard-loading');
+  const label = name ? `Loading ${displayNameForScore(name)}...` : 'Loading piece...';
+
+  if (placeholder) {
+    placeholder.style.display = loading ? 'block' : placeholder.style.display;
+    if (loading) placeholder.textContent = label;
+  }
+  if (frame && loading) {
+    frame.style.display = 'none';
+    frame.removeAttribute('src');
+    frame.srcdoc = '';
+  }
+  if (fallback && loading) {
+    fallback.style.display = 'none';
+    fallback.innerHTML = '';
+  }
+  if (keyboardLoading) keyboardLoading.style.display = loading ? 'grid' : 'none';
+  document.getElementById('progress-fill').style.width = loading ? '0%' : document.getElementById('progress-fill').style.width;
+  if (loading) {
+    document.getElementById('next-note-display').textContent = '—';
+    document.getElementById('beat-val').textContent  = '—';
+    document.getElementById('tempo-val').textContent = '—';
+    updatePracticePanelStatus();
+  }
+}
+
 async function openScore(name, options = {}) {
   const preserveSelectedPart = !!options.preserveSelectedPart;
   const preserveSheetVariant = !!options.preserveSheetVariant;
@@ -2452,72 +2505,77 @@ async function openScore(name, options = {}) {
   if (state.playing && state.current?.name !== name) stopPlaying();
   clearFingeringJobPolling();
   if (state.current?.name !== name) setFingeringJob(null);
-
-  const previousPart = preserveSelectedPart ? (state.selectedPart ?? 0) : 0;
-  const previousVariant = preserveSheetVariant ? state.sheetVariant : 'base';
-  const data = await fetchScore(name);
-  state.current = data;
-  renderGuestTips(data);
-  state.finishedPlayback = false;
-  state.practiceRightHand = null;
-  state.practiceLeftHand = null;
-  const parts = data.parts || [];
-  state.selectedPart = parts.length
-    ? Math.max(0, Math.min(previousPart, parts.length - 1))
-    : 0;
-  state.partInstruments = {};
-  state.sheetVariant = (previousVariant === 'fingered' && data.fingering?.applied) ? 'fingered' : 'base';
-  _stopMic();
-  setInputMode('keyboard');
-
-  document.getElementById('progress-fill').style.width = '0%';
-  document.getElementById('next-note-display').textContent = '—';
-  document.getElementById('beat-val').textContent  = '—';
-  document.getElementById('tempo-val').textContent = '—';
-  updatePracticePanelStatus();
-
-  resetSheetView();
-  await renderScoreSheet();
-
-  // Part picker
-  const picker = document.getElementById('part-picker');
-  const btns   = document.getElementById('part-buttons');
-  if (parts.length > 0) {
-    btns.innerHTML = parts.map((p, i) => {
-      const instr = p.instrument || 'piano';
-      return `<div class="part-row" id="part-row-${i}">
-        <button class="part-btn${i === state.selectedPart ? ' selected' : ''}"
-                onclick="selectPart(${i})" id="part-btn-${i}">
-          ${p.name}
-        </button>
-        <select class="instr-select" onchange="changeInstrument(${i}, this.value)" id="instr-${i}">
-          ${INSTRUMENTS.map(ins =>
-            `<option value="${ins}"${ins === instr ? ' selected' : ''}>${INSTRUMENT_EMOJI[ins] || '🎵'} ${ins}</option>`
-          ).join('')}
-        </select>
-      </div>`;
-    }).join('');
-    picker.style.display = 'block';
-  } else {
-    picker.style.display = 'none';
-  }
-
-  buildKeyboard(getRightHand());
-  updateNextKey(getRightHand(), 0);
-  renderNoteHighway();
-  syncExpectedMicNote();
-  preloadCurrentScoreInstruments();
-  renderPlayPieceList();
-  if (updateUrl) updateScoreUrl(name);
   if (reveal) showScreen('play-screen');
-  applyPracticeSplit(localStorage.getItem(PRACTICE_SPLIT_KEY));
-  state.paused = false;
-  state.pausedBeat = 0;
-  state.pausedBps = 1;
-  document.getElementById('start-btn').disabled = false;
-  document.getElementById('start-btn').textContent = '▶ Start';
-  document.getElementById('start-btn').classList.add('btn-primary');
-  document.getElementById('stop-btn').disabled  = true;
+  setPieceLoadingUI(true, name);
+
+  try {
+    const previousPart = preserveSelectedPart ? (state.selectedPart ?? 0) : 0;
+    const previousVariant = preserveSheetVariant ? state.sheetVariant : 'base';
+    const data = await fetchScore(name);
+    state.current = data;
+    renderGuestTips(data);
+    state.finishedPlayback = false;
+    state.practiceRightHand = null;
+    state.practiceLeftHand = null;
+    const parts = data.parts || [];
+    state.selectedPart = parts.length
+      ? Math.max(0, Math.min(previousPart, parts.length - 1))
+      : 0;
+    state.partInstruments = {};
+    state.sheetVariant = (previousVariant === 'fingered' && data.fingering?.applied) ? 'fingered' : 'base';
+    _stopMic();
+    setInputMode('keyboard');
+
+    document.getElementById('progress-fill').style.width = '0%';
+    document.getElementById('next-note-display').textContent = '—';
+    document.getElementById('beat-val').textContent  = '—';
+    document.getElementById('tempo-val').textContent = '—';
+    updatePracticePanelStatus();
+
+    resetSheetView();
+    await renderScoreSheet();
+
+    // Part picker
+    const picker = document.getElementById('part-picker');
+    const btns   = document.getElementById('part-buttons');
+    if (parts.length > 0) {
+      btns.innerHTML = parts.map((p, i) => {
+        const instr = p.instrument || 'piano';
+        return `<div class="part-row" id="part-row-${i}">
+          <button class="part-btn${i === state.selectedPart ? ' selected' : ''}"
+                  onclick="selectPart(${i})" id="part-btn-${i}">
+            ${p.name}
+          </button>
+          <select class="instr-select" onchange="changeInstrument(${i}, this.value)" id="instr-${i}">
+            ${INSTRUMENTS.map(ins =>
+              `<option value="${ins}"${ins === instr ? ' selected' : ''}>${INSTRUMENT_EMOJI[ins] || '🎵'} ${ins}</option>`
+            ).join('')}
+          </select>
+        </div>`;
+      }).join('');
+      picker.style.display = 'block';
+    } else {
+      picker.style.display = 'none';
+    }
+
+    buildKeyboard(getRightHand());
+    updateNextKey(getRightHand(), 0);
+    renderNoteHighway();
+    syncExpectedMicNote();
+    preloadCurrentScoreInstruments();
+    renderPlayPieceList();
+    if (updateUrl) updateScoreUrl(name);
+    applyPracticeSplit(localStorage.getItem(PRACTICE_SPLIT_KEY));
+    state.paused = false;
+    state.pausedBeat = 0;
+    state.pausedBps = 1;
+    document.getElementById('start-btn').disabled = false;
+    document.getElementById('start-btn').textContent = '▶ Start';
+    document.getElementById('start-btn').classList.add('btn-primary');
+    document.getElementById('stop-btn').disabled  = true;
+  } finally {
+    setPieceLoadingUI(false);
+  }
 }
 
 async function openRouteFromLocation(options = {}) {
